@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>🌞 NLMT Dashboard - Real-time ESPHome</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; }
+        body {
+            background: #0a1f1e;
+            font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
+            padding: 20px;
+            color: #e0f2e9;
+        }
+        .container {
+            max-width: 1300px;
+            margin: auto;
+        }
+        h1 {
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+        .status-badge {
+            background: #1f403c;
+            border-radius: 40px;
+            padding: 6px 16px;
+            font-size: 0.8rem;
+            font-weight: normal;
+        }
+        .online {
+            color: #6fcf97;
+            font-weight: bold;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 25px 0;
+        }
+        .card {
+            background: #1e2f2c;
+            border-radius: 28px;
+            padding: 20px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            border: 1px solid #2e4a45;
+            transition: 0.1s;
+        }
+        .card h3 {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: #b9dfd0;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+        }
+        .value {
+            font-size: 2.4rem;
+            font-weight: 700;
+            color: #f5b041;
+            line-height: 1.2;
+        }
+        .unit {
+            font-size: 1rem;
+            color: #8bb3a8;
+            margin-left: 6px;
+        }
+        .badge {
+            background: #2c5a52;
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 40px;
+            font-size: 0.7rem;
+            margin-top: 12px;
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #5e8b80;
+            margin-top: 30px;
+        }
+        .last-event {
+            font-size: 0.7rem;
+            text-align: right;
+            margin-top: 10px;
+        }
+        hr {
+            border-color: #2e4a45;
+            margin: 10px 0;
+        }
+        @media (max-width: 650px) {
+            .value { font-size: 1.8rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>
+        ☀️ Giám sát Năng Lượng Mặt Trời
+        <span class="status-badge" id="connStatus">🔴 Đang kết nối...</span>
+    </h1>
+    <div class="grid" id="dashboard"></div>
+    <div class="last-event" id="lastUpdate">⏳ Đợi dữ liệu...</div>
+    <div class="footer">
+        📡 Dữ liệu trực tiếp từ ESPHome (EventSource) – cập nhật ngay lập tức
+    </div>
+</div>
+
+<script>
+    // Danh sách các cảm biến muốn hiển thị (key là name_id trong event)
+    // Dựa trên dữ liệu thực tế từ /events của bạn
+    const sensors = [
+        { id: "sensor-cong_suat_pv", label: "🌞 Công suất PV", unit: "W", icon: "☀️", factor: 1 },
+        { id: "sensor-cong_suat_tai", label: "🏠 Công suất tải", unit: "W", icon: "⚡", factor: 1 },
+        { id: "sensor-can_bang_cong_suat", label: "🔋 Công suất pin (ước)", unit: "W", icon: "🔋", factor: 1 },
+        { id: "sensor-cong_suat_luoi", label: "🔌 Công suất lưới", unit: "W", icon: "🏭", factor: 1 },
+        { id: "sensor-dien_ap_pin_inverter", label: "⚡ Điện áp pin inverter", unit: "V", icon: "🔋", factor: 0.1 },
+        { id: "sensor-dien_ap_pv", label: "🌞 Điện áp PV", unit: "V", icon: "☀️", factor: 0.1 },
+        { id: "sensor-dong_pv", label: "💧 Dòng PV", unit: "A", icon: "💧", factor: 0.1 },
+        { id: "sensor-dien_ap_output", label: "📡 Điện áp output", unit: "V", icon: "⚡", factor: 0.1 },
+        { id: "sensor-dien_ap_bus", label: "🚌 Bus voltage", unit: "V", icon: "🔌", factor: 1 },
+        { id: "text_sensor-che_do_hoat_dong", label: "🔄 Chế độ hoạt động", unit: "", icon: "⚙️", isText: true },
+        { id: "binary_sensor-dang_sac_inverter", label: "🔋 Trạng thái sạc inverter", unit: "", icon: "🔌", isBinary: true },
+        { id: "sensor-jk_soc", label: "📊 JK SOC", unit: "%", icon: "🔋", factor: 1 },
+        { id: "sensor-jk_cong_suat_pin", label: "🔋 JK Công suất pin", unit: "W", icon: "🔋", factor: 0.1 },
+        { id: "sensor-jk_nhiet_do_1", label: "🌡️ Nhiệt độ JK 1", unit: "°C", icon: "🌡️", factor: 0.1 },
+        { id: "sensor-jk_lech_ap_cell", label: "⚖️ Chênh lệch cell", unit: "V", icon: "📊", factor: 0.001 },
+        { id: "sensor-jk_dien_ap_cell_trung_binh", label: "🔋 Điện áp cell TB", unit: "V", icon: "📊", factor: 0.0001 },
+        { id: "sensor-nhiet_do_inverter", label: "🌡️ Nhiệt độ inverter", unit: "°C", icon: "🌡️", factor: 0.1 }
+    ];
+
+    let stateMap = new Map(); // Lưu giá trị mới nhất của mỗi sensor
+
+    // Hiển thị toàn bộ card
+    function renderDashboard() {
+        const grid = document.getElementById('dashboard');
+        grid.innerHTML = '';
+        for (let s of sensors) {
+            let rawValue = stateMap.get(s.id);
+            let displayValue = '--';
+            let extraHtml = '';
+
+            if (rawValue !== undefined) {
+                if (s.isBinary) {
+                    displayValue = rawValue === true ? 'ON' : 'OFF';
+                    if (rawValue === true) extraHtml = '<div class="badge">✅ Đang hoạt động</div>';
+                } else if (s.isText) {
+                    displayValue = rawValue;
+                } else {
+                    let num = parseFloat(rawValue);
+                    if (!isNaN(num)) {
+                        let adjusted = num * (s.factor || 1);
+                        displayValue = adjusted.toFixed(1);
+                        // Thêm badge trạng thái cho công suất pin
+                        if (s.id === "sensor-can_bang_cong_suat") {
+                            if (adjusted > 0) extraHtml = '<div class="badge">🔋 Đang sạc</div>';
+                            else if (adjusted < 0) extraHtml = '<div class="badge">⚡ Xả pin</div>';
+                        }
+                        if (s.id === "binary_sensor-dang_sac_inverter") {
+                            if (rawValue === true) extraHtml = '<div class="badge">⚡ Đang sạc inverter</div>';
+                        }
+                    } else {
+                        displayValue = rawValue;
+                    }
+                }
+            }
+
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.id = `card-${s.id}`;
+            card.innerHTML = `
+                <h3>${s.icon} ${s.label}</h3>
+                <div class="value">${displayValue} <span class="unit">${s.unit}</span></div>
+                ${extraHtml}
+            `;
+            grid.appendChild(card);
+        }
+    }
+
+    // Cập nhật từng card khi có event mới
+    function updateSingleSensor(id, value) {
+        const sensorCfg = sensors.find(s => s.id === id);
+        if (!sensorCfg) return;
+
+        const cardDiv = document.getElementById(`card-${id}`);
+        if (!cardDiv) return;
+
+        let displayValue = '--';
+        let extraHtml = '';
+
+        if (sensorCfg.isBinary) {
+            displayValue = value === true ? 'ON' : 'OFF';
+            if (value === true) extraHtml = '<div class="badge">✅ Đang hoạt động</div>';
+        } else if (sensorCfg.isText) {
+            displayValue = value;
+        } else {
+            let num = parseFloat(value);
+            if (!isNaN(num)) {
+                let adjusted = num * (sensorCfg.factor || 1);
+                displayValue = adjusted.toFixed(1);
+                if (sensorCfg.id === "sensor-can_bang_cong_suat") {
+                    if (adjusted > 0) extraHtml = '<div class="badge">🔋 Đang sạc</div>';
+                    else if (adjusted < 0) extraHtml = '<div class="badge">⚡ Xả pin</div>';
+                }
+                if (sensorCfg.id === "binary_sensor-dang_sac_inverter" && value === true) {
+                    extraHtml = '<div class="badge">⚡ Đang sạc inverter</div>';
+                }
+            } else {
+                displayValue = value;
+            }
+        }
+
+        const valueDiv = cardDiv.querySelector('.value');
+        if (valueDiv) {
+            valueDiv.innerHTML = `${displayValue} <span class="unit">${sensorCfg.unit}</span>`;
+        }
+        // Xóa badge cũ và thêm mới nếu có
+        const oldBadge = cardDiv.querySelector('.badge');
+        if (oldBadge) oldBadge.remove();
+        if (extraHtml) {
+            cardDiv.insertAdjacentHTML('beforeend', extraHtml);
+        }
+    }
+
+    // Kết nối EventSource đến ESPHome
+    function connectEventSource() {
+        const eventUrl = 'http://piupepong.ddnsfree.com:82/events';
+        const source = new EventSource(eventUrl);
+
+        source.onopen = function() {
+            document.getElementById('connStatus').innerHTML = '🟢 Đã kết nối real-time';
+            document.getElementById('connStatus').style.background = '#1f403c';
+        };
+
+        source.onerror = function(e) {
+            console.error('EventSource lỗi', e);
+            document.getElementById('connStatus').innerHTML = '🔴 Mất kết nối, đang thử lại...';
+            setTimeout(() => {
+                source.close();
+                connectEventSource();
+            }, 3000);
+        };
+
+        // Lắng nghe sự kiện "state"
+        source.addEventListener('state', function(e) {
+            try {
+                const data = JSON.parse(e.data);
+                const entityId = data.id;
+                let value = data.value !== undefined ? data.value : (data.state === 'ON' ? true : (data.state === 'OFF' ? false : data.state));
+                if (value === undefined && data.state !== undefined) value = data.state;
+                
+                if (entityId) {
+                    stateMap.set(entityId, value);
+                    updateSingleSensor(entityId, value);
+                    document.getElementById('lastUpdate').innerHTML = `🕒 Cập nhật: ${new Date().toLocaleTimeString()}`;
+                }
+            } catch (err) {
+                console.warn("Parse lỗi:", err);
+            }
+        });
+
+        // Sau 2 giây nếu chưa có dữ liệu, render lần đầu (các card sẽ hiển thị --)
+        setTimeout(() => {
+            if (stateMap.size === 0) {
+                renderDashboard();
+            }
+        }, 2000);
+    }
+
+    // Khởi động
+    connectEventSource();
+    // render lần đầu để có cấu trúc grid
+    renderDashboard();
+</script>
+</body>
+</html>
