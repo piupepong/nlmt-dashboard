@@ -1,5 +1,5 @@
 // === CẤU HÌNH ESPHOME ===
-const EVENT_URL = "http://piupepong.ddnsfree.com:82/events";
+const EVENT_URL = "https://piupepong.ddnsfree.com/events";
 const SUPABASE_CONFIG = window.SUPABASE_CONFIG || {};
 const SUPABASE_TABLE = SUPABASE_CONFIG.table || 'energy_samples';
 const DEVICE_ID = SUPABASE_CONFIG.deviceId || 'nlmt-main';
