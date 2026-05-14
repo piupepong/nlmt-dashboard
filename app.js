@@ -3,6 +3,8 @@ const EVENT_URL = "https://piupepong.ddnsfree.com/events";
 const SUPABASE_CONFIG = window.SUPABASE_CONFIG || {};
 const SUPABASE_TABLE = SUPABASE_CONFIG.table || 'energy_samples';
 const DEVICE_ID = SUPABASE_CONFIG.deviceId || 'nlmt-main';
+const THEME_STORAGE_KEY = 'nlmt-theme-v1';
+const THEME_AUTO_STORAGE_KEY = 'nlmt-theme-auto-v1';
 let supabaseClient = null;
 let supabaseReady = false;
 let isLoadingRemoteHistory = false;
@@ -88,6 +90,87 @@ function setText(id, value) {
 function setHtml(id, value) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = value;
+}
+
+function isNightTime(date = new Date()) {
+    const hour = date.getHours();
+    return hour >= 18 || hour < 6;
+}
+
+function savedThemeChoice() {
+    const value = localStorage.getItem(THEME_STORAGE_KEY);
+    return value === 'dark' || value === 'light' ? value : null;
+}
+
+function isThemeAutoEnabled() {
+    return localStorage.getItem(THEME_AUTO_STORAGE_KEY) !== 'false';
+}
+
+function currentTheme() {
+    return isThemeAutoEnabled() ? (isNightTime() ? 'dark' : 'light') : (savedThemeChoice() || 'light');
+}
+
+function applyTheme(theme = currentTheme()) {
+    document.body.classList.toggle('theme-dark', theme === 'dark');
+    document.body.classList.toggle('theme-light', theme !== 'dark');
+    document.querySelectorAll('.theme-option').forEach(button => {
+        button.classList.toggle('active', button.dataset.themeChoice === theme);
+    });
+    const auto = document.getElementById('themeAuto');
+    if (auto) auto.checked = isThemeAutoEnabled();
+    updateChartTheme();
+}
+
+function setupThemeControls() {
+    document.querySelectorAll('.theme-option').forEach(button => {
+        button.addEventListener('click', () => {
+            localStorage.setItem(THEME_STORAGE_KEY, button.dataset.themeChoice);
+            localStorage.setItem(THEME_AUTO_STORAGE_KEY, 'false');
+            applyTheme(button.dataset.themeChoice);
+        });
+    });
+
+    const auto = document.getElementById('themeAuto');
+    if (auto) {
+        auto.addEventListener('change', () => {
+            localStorage.setItem(THEME_AUTO_STORAGE_KEY, auto.checked ? 'true' : 'false');
+            applyTheme(currentTheme());
+        });
+    }
+
+    applyTheme();
+    setInterval(() => {
+        if (isThemeAutoEnabled()) applyTheme();
+    }, 5 * 60 * 1000);
+}
+
+function chartTheme() {
+    const dark = document.body.classList.contains('theme-dark');
+    return {
+        text: dark ? '#bfe8df' : '#476864',
+        strong: dark ? '#e8fff8' : '#365f59',
+        grid: dark ? 'rgba(177, 231, 222, 0.12)' : 'rgba(36, 74, 69, 0.1)',
+        gridSoft: dark ? 'rgba(177, 231, 222, 0.08)' : 'rgba(36, 74, 69, 0.08)',
+        tooltipBg: dark ? 'rgba(4, 13, 19, 0.9)' : 'rgba(20, 62, 56, 0.82)'
+    };
+}
+
+function updateChartTheme() {
+    if (typeof Chart === 'undefined') return;
+    const theme = chartTheme();
+    Chart.defaults.color = theme.text;
+    Chart.defaults.borderColor = theme.grid;
+    [dailyChart, monthlyChart, livePowerChart, powerMixChart, batteryTrendChart, temperatureChart]
+        .filter(Boolean)
+        .forEach(chart => {
+            if (chart.options.plugins?.legend?.labels) chart.options.plugins.legend.labels.color = theme.strong;
+            if (chart.options.plugins?.tooltip) chart.options.plugins.tooltip.backgroundColor = theme.tooltipBg;
+            Object.values(chart.options.scales || {}).forEach(scale => {
+                if (scale?.ticks) scale.ticks.color = theme.text;
+                if (scale?.grid) scale.grid.color = theme.grid;
+            });
+            chart.update('none');
+        });
 }
 
 function formatClock(timestamp) {
@@ -216,6 +299,64 @@ function updateAlerts(samples = getChartHistory()) {
     setHtml('alertList', alerts.join(''));
 }
 
+function statusBadge(text, state = 'neutral') {
+    return `<span class="attention-badge ${state}">${text}</span>`;
+}
+
+function statusFromRange(value, warning, danger, reverse = false) {
+    if (!Number.isFinite(value)) return {state: 'neutral', text: 'Chờ dữ liệu'};
+    if (reverse) {
+        if (value <= danger) return {state: 'danger', text: 'Nguy hiểm'};
+        if (value <= warning) return {state: 'warning', text: 'Cần chú ý'};
+        return {state: 'ok', text: 'Ổn định'};
+    }
+    if (value >= danger) return {state: 'danger', text: 'Nguy hiểm'};
+    if (value >= warning) return {state: 'warning', text: 'Cần chú ý'};
+    return {state: 'ok', text: 'Ổn định'};
+}
+
+function attentionRow(group, value, status) {
+    return `<tr><td>${group}</td><td>${value}</td><td>${statusBadge(status.text, status.state)}</td></tr>`;
+}
+
+function updateOperationMonitor() {
+    const pv = realData.pv;
+    const load = realData.load;
+    const soc = realData.soc;
+    const invTemp = realData.invTemp;
+    const mosTemp = realData.tempMos;
+    const loadPercent = realData.loadPercent;
+    const cellDiff = realData.cellDiff;
+    const outputVoltage = realData.outputVoltage;
+    const freq = realData.freq;
+    const pvLoadRatio = Number.isFinite(pv) && Number.isFinite(load) && load > 0 ? pv / load * 100 : null;
+    const maxTemp = maxValue([invTemp, mosTemp].filter(Number.isFinite));
+
+    const pvStatus = !Number.isFinite(pvLoadRatio)
+        ? {state: 'neutral', text: 'Chờ dữ liệu'}
+        : pvLoadRatio >= 75 ? {state: 'ok', text: 'PV gánh tải tốt'}
+        : pvLoadRatio >= 25 ? {state: 'warning', text: 'PV hỗ trợ một phần'}
+        : {state: 'neutral', text: 'PV thấp'};
+
+    const socStatus = statusFromRange(soc, 30, 20, true);
+    const tempStatus = statusFromRange(maxTemp, 50, 60);
+    const loadStatus = statusFromRange(loadPercent, 75, 90);
+    const cellStatus = statusFromRange(cellDiff, 0.04, 0.08);
+    const outputOk = Number.isFinite(outputVoltage) && outputVoltage >= 210 && outputVoltage <= 240 && Number.isFinite(freq) && freq >= 49 && freq <= 51;
+    const outputStatus = !Number.isFinite(outputVoltage) || !Number.isFinite(freq)
+        ? {state: 'neutral', text: 'Chờ dữ liệu'}
+        : outputOk ? {state: 'ok', text: 'AC ổn định'}
+        : {state: 'warning', text: 'Ngoài dải chuẩn'};
+
+    setHtml('attentionTableBody', [
+        attentionRow('PV / Tải', `${formatValue(pv)} W / ${formatValue(load)} W (${formatValue(pvLoadRatio)}%)`, pvStatus),
+        attentionRow('Pin', `SOC ${formatValue(soc)}%, lệch cell ${formatValue(cellDiff, 3)} V`, cellStatus.state === 'ok' ? socStatus : cellStatus),
+        attentionRow('Inverter', `Tải ${formatValue(loadPercent)}%, nhiệt ${formatValue(maxTemp, 1)} °C`, loadStatus.state === 'ok' ? tempStatus : loadStatus),
+        attentionRow('AC Output', `${formatValue(outputVoltage, 1)} V, ${formatValue(freq, 1)} Hz`, outputStatus)
+    ].join(''));
+
+}
+
 function normalizeSensorId(id) {
     return String(id || '')
         .toLowerCase()
@@ -341,7 +482,7 @@ let pulse = 0;
 function resizeFlow() {
     const container = canvas.parentElement;
     width = container.clientWidth;
-    height = window.innerWidth <= 860 ? 520 : 380;
+    height = window.innerWidth <= 860 ? 520 : 210;
     if (window.innerWidth <= 560) height = 540;
     canvas.width = width;
     canvas.height = height;
@@ -354,18 +495,18 @@ function updateNodeCoords() {
     if (width <= 620) {
         nodes = {
             pv: {x: width * 0.28, y: height * 0.18, label: 'PV', color: '#f5b64a'},
-            load: {x: width * 0.72, y: height * 0.18, label: 'Tải', color: '#78dce3'},
+            grid: {x: width * 0.72, y: height * 0.18, label: 'Lưới', color: '#8db5ff'},
             inverter: {x: width * 0.5, y: height * 0.46, label: 'Inverter', color: '#ffffff'},
-            grid: {x: width * 0.28, y: height * 0.78, label: 'Lưới', color: '#8db5ff'},
+            load: {x: width * 0.28, y: height * 0.78, label: 'Tải', color: '#78dce3'},
             battery: {x: width * 0.72, y: height * 0.78, label: 'Pin', color: '#78c9b5'}
         };
     } else {
         nodes = {
-            pv: {x: width * 0.13, y: height * 0.36, label: 'PV', color: '#f5b64a'},
-            load: {x: width * 0.87, y: height * 0.36, label: 'Tải', color: '#78dce3'},
-            grid: {x: width * 0.22, y: height * 0.78, label: 'Lưới', color: '#8db5ff'},
-            battery: {x: width * 0.78, y: height * 0.78, label: 'Pin', color: '#78c9b5'},
-            inverter: {x: width * 0.5, y: height * 0.43, label: 'Inverter', color: '#ffffff'}
+            pv: {x: width * 0.14, y: height * 0.35, label: 'PV', color: '#f5b64a'},
+            grid: {x: width * 0.86, y: height * 0.35, label: 'Lưới', color: '#8db5ff'},
+            load: {x: width * 0.25, y: height * 0.72, label: 'Tải', color: '#78dce3'},
+            battery: {x: width * 0.75, y: height * 0.72, label: 'Pin', color: '#78c9b5'},
+            inverter: {x: width * 0.5, y: height * 0.45, label: 'Inverter', color: '#ffffff'}
         };
     }
 }
@@ -571,6 +712,7 @@ function initSupabase() {
 }
 
 function glassChartOptions(extra = {}) {
+    const theme = chartTheme();
     return {
         responsive: true,
         maintainAspectRatio: true,
@@ -581,12 +723,12 @@ function glassChartOptions(extra = {}) {
                     boxWidth: 32,
                     useBorderRadius: true,
                     borderRadius: 4,
-                    color: '#365f59',
+                    color: theme.strong,
                     font: {weight: 700}
                 }
             },
             tooltip: {
-                backgroundColor: 'rgba(20, 62, 56, 0.82)',
+                backgroundColor: theme.tooltipBg,
                 borderColor: 'rgba(255,255,255,0.5)',
                 borderWidth: 1,
                 padding: 12,
@@ -595,8 +737,8 @@ function glassChartOptions(extra = {}) {
             }
         },
         scales: {
-            x: {grid: {color: 'rgba(36, 74, 69, 0.08)'}, ticks: {color: '#5d7874'}},
-            y: {grid: {color: 'rgba(36, 74, 69, 0.1)'}, ticks: {color: '#5d7874'}}
+            x: {grid: {color: theme.gridSoft}, ticks: {color: theme.text}},
+            y: {grid: {color: theme.grid}, ticks: {color: theme.text}}
         },
         ...extra
     };
@@ -960,32 +1102,127 @@ function exportHistoryCsv() {
     URL.revokeObjectURL(url);
 }
 
-function setupChartControls() {
-    const rangeFrom = document.getElementById('rangeFrom');
-    const rangeTo = document.getElementById('rangeTo');
-    if (rangeFrom) rangeFrom.value = formatDateTimeLocal(selectedRange.from);
+function endOfLocalDay(timestamp = Date.now()) {
+    const date = new Date(timestamp);
+    date.setHours(23, 59, 59, 999);
+    return date.getTime();
+}
 
-    document.querySelectorAll('.range-btn').forEach(button => {
-        button.addEventListener('click', () => {
-            const days = Number(button.dataset.rangeDays);
-            selectedRange = {from: Date.now() - days * 24 * 60 * 60 * 1000, to: null};
-            document.querySelectorAll('.range-btn').forEach(btn => btn.classList.toggle('active', btn === button));
-            if (rangeFrom) rangeFrom.value = formatDateTimeLocal(selectedRange.from);
-            if (rangeTo) rangeTo.value = '';
-            applyHistoryToLineCharts();
-            loadHistoryFromSupabase();
+function startOfLocalWeek(timestamp = Date.now()) {
+    const date = new Date(timestamp);
+    const day = date.getDay() || 7;
+    date.setDate(date.getDate() - day + 1);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+}
+
+function startOfLocalYear(timestamp = Date.now()) {
+    const date = new Date(timestamp);
+    date.setMonth(0, 1);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+}
+
+function formatDateInput(timestamp) {
+    const date = new Date(timestamp);
+    return `${date.getFullYear()}-${padTimePart(date.getMonth() + 1)}-${padTimePart(date.getDate())}`;
+}
+
+function formatTimeInput(timestamp) {
+    const date = new Date(timestamp);
+    return `${padTimePart(date.getHours())}:${padTimePart(date.getMinutes())}`;
+}
+
+function rangeFromPreset(preset) {
+    const now = Date.now();
+    const hour = 60 * 60 * 1000;
+    const day = 24 * hour;
+    if (preset === 'today') return {from: startOfLocalDay(now), to: null, label: 'Hôm nay'};
+    if (preset === 'yesterday') {
+        const yesterday = now - day;
+        return {from: startOfLocalDay(yesterday), to: endOfLocalDay(yesterday), label: 'Hôm qua'};
+    }
+    if (preset === 'week') return {from: startOfLocalWeek(now), to: null, label: 'Tuần này'};
+    if (preset === 'month') return {from: startOfLocalMonth(now), to: null, label: 'Tháng này'};
+    if (preset === 'year') return {from: startOfLocalYear(now), to: null, label: 'Năm nay'};
+    if (preset === '1h') return {from: now - hour, to: null, label: '1 giờ qua'};
+    if (preset === '12h') return {from: now - 12 * hour, to: null, label: '12 giờ qua'};
+    if (preset === '7d') return {from: now - 7 * day, to: null, label: '7 ngày qua'};
+    if (preset === '30d') return {from: now - 30 * day, to: null, label: '30 ngày qua'};
+    if (preset === '90d') return {from: now - 90 * day, to: null, label: '90 ngày qua'};
+    return {from: now - day, to: null, label: '24 giờ qua'};
+}
+
+function setRangeInputs(range, label = 'Tùy chỉnh') {
+    const fromDate = document.getElementById('rangeFromDate');
+    const fromTime = document.getElementById('rangeFromTime');
+    const toDate = document.getElementById('rangeToDate');
+    const toTime = document.getElementById('rangeToTime');
+    const summary = document.getElementById('historyRangeSummary');
+    const to = range.to || Date.now();
+    if (fromDate) fromDate.value = formatDateInput(range.from);
+    if (fromTime) fromTime.value = formatTimeInput(range.from);
+    if (toDate) toDate.value = formatDateInput(to);
+    if (toTime) toTime.value = formatTimeInput(to);
+    if (summary) summary.innerText = label;
+}
+
+function applySelectedRange(range, activePreset = null) {
+    selectedRange = {from: range.from, to: range.to || null};
+    const presetSelect = document.getElementById('rangePresetSelect');
+    if (presetSelect && activePreset) presetSelect.value = activePreset;
+    if (presetSelect && !activePreset) presetSelect.value = 'custom';
+    setRangeInputs(selectedRange, range.label || 'Tùy chỉnh');
+    applyHistoryToLineCharts();
+    loadHistoryFromSupabase();
+}
+
+function readCustomRange() {
+    const fromDate = document.getElementById('rangeFromDate');
+    const fromTime = document.getElementById('rangeFromTime');
+    const toDate = document.getElementById('rangeToDate');
+    const toTime = document.getElementById('rangeToTime');
+    const from = fromDate && fromTime && fromDate.value && fromTime.value
+        ? new Date(`${fromDate.value}T${fromTime.value}`).getTime()
+        : NaN;
+    const to = toDate && toTime && toDate.value && toTime.value
+        ? new Date(`${toDate.value}T${toTime.value}`).getTime()
+        : NaN;
+    return {from, to};
+}
+
+function setupChartControls() {
+    setRangeInputs(selectedRange, '24 giờ qua');
+
+    const presetSelect = document.getElementById('rangePresetSelect');
+    if (presetSelect) {
+        presetSelect.addEventListener('change', () => {
+            const preset = presetSelect.value;
+            if (preset === 'custom') {
+                setRangeInputs(selectedRange, 'Khoảng tùy chỉnh');
+                return;
+            }
+            applySelectedRange(rangeFromPreset(preset), preset);
         });
-    });
+    }
 
     const applyRange = document.getElementById('applyRange');
     if (applyRange) {
         applyRange.addEventListener('click', () => {
-            const from = rangeFrom && rangeFrom.value ? new Date(rangeFrom.value).getTime() : Date.now() - 24 * 60 * 60 * 1000;
-            const to = rangeTo && rangeTo.value ? new Date(rangeTo.value).getTime() : null;
-            selectedRange = {from, to};
-            document.querySelectorAll('.range-btn').forEach(btn => btn.classList.remove('active'));
-            applyHistoryToLineCharts();
-            loadHistoryFromSupabase();
+            const range = readCustomRange();
+            const summary = document.getElementById('historyRangeSummary');
+            if (!Number.isFinite(range.from) || !Number.isFinite(range.to) || range.to <= range.from) {
+                if (summary) summary.innerText = 'Khoảng thời gian không hợp lệ';
+                return;
+            }
+            applySelectedRange({from: range.from, to: range.to, label: 'Khoảng tùy chỉnh'}, null);
+        });
+    }
+
+    const resetRange = document.getElementById('resetRange');
+    if (resetRange) {
+        resetRange.addEventListener('click', () => {
+            applySelectedRange(rangeFromPreset('24h'), '24h');
         });
     }
 
@@ -1006,8 +1243,9 @@ function setupChartControls() {
 }
 
 function initCharts() {
-    Chart.defaults.color = '#476864';
-    Chart.defaults.borderColor = 'rgba(36, 74, 69, 0.12)';
+    const theme = chartTheme();
+    Chart.defaults.color = theme.text;
+    Chart.defaults.borderColor = theme.grid;
     Chart.defaults.font.family = "'Segoe UI', 'Poppins', system-ui, sans-serif";
 
     const ctxDaily = document.getElementById('dailyBarChart').getContext('2d');
@@ -1083,7 +1321,9 @@ function initCharts() {
     });
 
     applyHistoryToLineCharts();
+    updateOperationMonitor();
     setupChartControls();
+    updateChartTheme();
 }
 function updateCharts(options = {}) {
     if (!options.skipHistoryPush) pushHistory();
@@ -1105,6 +1345,7 @@ function updateCharts(options = {}) {
         ];
         powerMixChart.update('none');
     }
+    updateOperationMonitor();
     updateInsights();
     updateSystemStatus();
 }
@@ -1147,10 +1388,12 @@ function connectEvents() {
 }
 connectEvents();
 initSupabase();
+setupThemeControls();
 applyEstimatedProduction(historySamples);
 initCharts();
 updateFloatingCards();
 updateOtherUI();
+updateOperationMonitor();
 updateInsights();
 updateSystemStatus();
 loadHistoryFromSupabase();
