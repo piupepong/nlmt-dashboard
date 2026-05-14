@@ -22,6 +22,11 @@ let realData = {
     monthCharge: null, monthDischarge: null, monthPv: null
 };
 
+let estimatedProduction = {
+    dailyCharge: null, dailyDischarge: null, dailyPv: null,
+    monthCharge: null, monthDischarge: null, monthPv: null
+};
+
 const sensorMap = {
     'sensor-cong_suat_pv': 'pv',
     'sensor-cong_suat_tai': 'load',
@@ -45,10 +50,16 @@ const sensorMap = {
     'sensor-pin_xa_hom_nay': 'dailyDischarge',
     'sensor-pv_hom_nay': 'dailyPv',
     'sensor-san_luong_pv_hom_nay': 'dailyPv',
+    'sensor.nangluongmattroi_pin_sac_ngay': 'dailyCharge',
+    'sensor.nangluongmattroi_pin_xa_ngay': 'dailyDischarge',
+    'sensor.nangluongmattroi_pv_ngay': 'dailyPv',
     'sensor-pin_sac_thang': 'monthCharge',
     'sensor-pin_xa_thang': 'monthDischarge',
     'sensor-pv_thang': 'monthPv',
-    'sensor-san_luong_pv_thang': 'monthPv'
+    'sensor-san_luong_pv_thang': 'monthPv',
+    'sensor.nangluongmattroi_pin_sac_thang': 'monthCharge',
+    'sensor.nangluongmattroi_pin_xa_thang': 'monthDischarge',
+    'sensor.nangluongmattroi_pv_thang': 'monthPv'
 };
 
 function valueOrZero(value) {
@@ -63,6 +74,10 @@ function numberOrNull(value, digits = null) {
 function formatValue(value, digits = 0) {
     if (!Number.isFinite(value)) return '--';
     return digits > 0 ? value.toFixed(digits) : Math.round(value).toString();
+}
+
+function productionValue(key) {
+    return Number.isFinite(realData[key]) ? realData[key] : estimatedProduction[key];
 }
 
 function setText(id, value) {
@@ -201,10 +216,20 @@ function updateAlerts(samples = getChartHistory()) {
     setHtml('alertList', alerts.join(''));
 }
 
+function normalizeSensorId(id) {
+    return String(id || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/[^a-z0-9]+/g, '_');
+}
+
 function resolveSensorKey(id) {
     if (sensorMap[id]) return sensorMap[id];
-    const normalized = id.toLowerCase();
-    if (normalized.includes('hom_nay') || normalized.includes('today') || normalized.includes('daily')) {
+    const normalized = normalizeSensorId(id);
+    if (sensorMap[normalized]) return sensorMap[normalized];
+    if (normalized.includes('ngay') || normalized.includes('hom_nay') || normalized.includes('homnay') || normalized.includes('today') || normalized.includes('daily')) {
         if (normalized.includes('sac') || normalized.includes('charge')) return 'dailyCharge';
         if (normalized.includes('xa') || normalized.includes('discharge')) return 'dailyDischarge';
         if (normalized.includes('pv') || normalized.includes('solar')) return 'dailyPv';
@@ -285,12 +310,12 @@ function updateOtherUI() {
     setHtml('invGrid', formatValue(realData.grid));
     setHtml('loadPercent', formatValue(realData.loadPercent));
     setHtml('invTemp', formatValue(realData.invTemp, 1));
-    setHtml('dailyCharge', formatValue(realData.dailyCharge, 2));
-    setHtml('dailyDischarge', formatValue(realData.dailyDischarge, 2));
-    setHtml('dailyPv', formatValue(realData.dailyPv, 2));
-    setHtml('monthCharge', formatValue(realData.monthCharge, 2));
-    setHtml('monthDischarge', formatValue(realData.monthDischarge, 2));
-    setHtml('monthPv', formatValue(realData.monthPv, 2));
+    setHtml('dailyCharge', formatValue(productionValue('dailyCharge'), 2));
+    setHtml('dailyDischarge', formatValue(productionValue('dailyDischarge'), 2));
+    setHtml('dailyPv', formatValue(productionValue('dailyPv'), 2));
+    setHtml('monthCharge', formatValue(productionValue('monthCharge'), 2));
+    setHtml('monthDischarge', formatValue(productionValue('monthDischarge'), 2));
+    setHtml('monthPv', formatValue(productionValue('monthPv'), 2));
     setHtml('tblPv', `${formatValue(realData.pv)} W`);
     setHtml('tblLoad', `${formatValue(realData.load)} W`);
     setHtml('tblPvV', `${formatValue(realData.pvVoltage, 1)} V`);
@@ -642,12 +667,12 @@ function historySampleToRow(sample) {
         apparent_va: numberOrNull(realData.apparent, 0),
         load_percent: numberOrNull(realData.loadPercent, 0),
         cell_diff_v: numberOrNull(realData.cellDiff, 3),
-        daily_charge_kwh: numberOrNull(realData.dailyCharge, 2),
-        daily_discharge_kwh: numberOrNull(realData.dailyDischarge, 2),
-        daily_pv_kwh: numberOrNull(realData.dailyPv, 2),
-        month_charge_kwh: numberOrNull(realData.monthCharge, 2),
-        month_discharge_kwh: numberOrNull(realData.monthDischarge, 2),
-        month_pv_kwh: numberOrNull(realData.monthPv, 2)
+        daily_charge_kwh: numberOrNull(productionValue('dailyCharge'), 2),
+        daily_discharge_kwh: numberOrNull(productionValue('dailyDischarge'), 2),
+        daily_pv_kwh: numberOrNull(productionValue('dailyPv'), 2),
+        month_charge_kwh: numberOrNull(productionValue('monthCharge'), 2),
+        month_discharge_kwh: numberOrNull(productionValue('monthDischarge'), 2),
+        month_pv_kwh: numberOrNull(productionValue('monthPv'), 2)
     };
 }
 
@@ -662,6 +687,85 @@ function rowToHistorySample(row) {
         voltage: row.battery_voltage_v === null ? null : Number(row.battery_voltage_v),
         invTemp: row.inverter_temp_c === null ? null : Number(row.inverter_temp_c),
         mosTemp: row.mos_temp_c === null ? null : Number(row.mos_temp_c)
+    };
+}
+
+function startOfLocalDay(timestamp = Date.now()) {
+    const date = new Date(timestamp);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+}
+
+function startOfLocalMonth(timestamp = Date.now()) {
+    const date = new Date(timestamp);
+    date.setDate(1);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+}
+
+function latestFinite(rows, column, from = null) {
+    for (let i = rows.length - 1; i >= 0; i--) {
+        if (Number.isFinite(from) && new Date(rows[i].ts).getTime() < from) continue;
+        const value = Number(rows[i][column]);
+        if (Number.isFinite(value)) return value;
+    }
+    return null;
+}
+
+function roundKwh(value) {
+    return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
+}
+
+function estimateProductionFromSamples(samples, from, to) {
+    const sorted = samples
+        .filter(sample => Number.isFinite(sample.ts))
+        .sort((a, b) => a.ts - b.ts);
+    if (sorted.length < 2) {
+        return {charge: null, discharge: null, pv: null};
+    }
+
+    let chargeWh = 0;
+    let dischargeWh = 0;
+    let pvWh = 0;
+
+    for (let i = 0; i < sorted.length - 1; i++) {
+        const current = sorted[i];
+        const next = sorted[i + 1];
+        const segmentStart = Math.max(current.ts, from);
+        const segmentEnd = Math.min(next.ts, to);
+        if (segmentEnd <= segmentStart) continue;
+
+        const hours = Math.min((segmentEnd - segmentStart) / 3600000, 0.25);
+        if (Number.isFinite(current.bat)) {
+            if (current.bat > 0) chargeWh += current.bat * hours;
+            if (current.bat < 0) dischargeWh += Math.abs(current.bat) * hours;
+        }
+        if (Number.isFinite(current.pv) && current.pv > 0) {
+            pvWh += current.pv * hours;
+        }
+    }
+
+    return {
+        charge: roundKwh(chargeWh / 1000),
+        discharge: roundKwh(dischargeWh / 1000),
+        pv: roundKwh(pvWh / 1000)
+    };
+}
+
+function applyEstimatedProduction(samples, rows = []) {
+    const now = Date.now();
+    const todayStart = startOfLocalDay(now);
+    const monthStart = startOfLocalMonth(now);
+    const todayTotals = estimateProductionFromSamples(samples, todayStart, now);
+    const monthTotals = estimateProductionFromSamples(samples, monthStart, now);
+
+    estimatedProduction = {
+        dailyCharge: latestFinite(rows, 'daily_charge_kwh', todayStart) ?? todayTotals.charge,
+        dailyDischarge: latestFinite(rows, 'daily_discharge_kwh', todayStart) ?? todayTotals.discharge,
+        dailyPv: latestFinite(rows, 'daily_pv_kwh', todayStart) ?? todayTotals.pv,
+        monthCharge: latestFinite(rows, 'month_charge_kwh') ?? monthTotals.charge,
+        monthDischarge: latestFinite(rows, 'month_discharge_kwh') ?? monthTotals.discharge,
+        monthPv: latestFinite(rows, 'month_pv_kwh') ?? monthTotals.pv
     };
 }
 
@@ -715,6 +819,50 @@ async function loadHistoryFromSupabase() {
     }
 }
 
+async function loadProductionFromSupabase() {
+    if (!supabaseReady || !supabaseClient) {
+        applyEstimatedProduction(historySamples);
+        return false;
+    }
+
+    try {
+        const now = Date.now();
+        const from = startOfLocalMonth(now);
+        const pageSize = 1000;
+        const data = [];
+
+        for (let offset = 0; offset < 50000; offset += pageSize) {
+            const { data: page, error } = await supabaseClient
+                .from(SUPABASE_TABLE)
+                .select('ts,pv_w,battery_w,daily_charge_kwh,daily_discharge_kwh,daily_pv_kwh,month_charge_kwh,month_discharge_kwh,month_pv_kwh')
+                .eq('device_id', DEVICE_ID)
+                .gte('ts', new Date(from).toISOString())
+                .lte('ts', new Date(now).toISOString())
+                .order('ts', { ascending: true })
+                .range(offset, offset + pageSize - 1);
+            if (error) throw error;
+            data.push(...page);
+            if (page.length < pageSize) break;
+        }
+
+        const samples = data.map(row => ({
+            ts: new Date(row.ts).getTime(),
+            pv: row.pv_w === null ? null : Number(row.pv_w),
+            bat: row.battery_w === null ? null : Number(row.battery_w)
+        }));
+        applyEstimatedProduction(samples, data);
+        updateOtherUI();
+        updateCharts({skipHistoryPush: true});
+        return true;
+    } catch (err) {
+        console.warn('Supabase production load failed:', err.message);
+        applyEstimatedProduction(historySamples);
+        updateOtherUI();
+        updateCharts({skipHistoryPush: true});
+        return false;
+    }
+}
+
 function pushHistory(force = false) {
     const now = Date.now();
     if (!hasRealtimeData()) return;
@@ -723,6 +871,7 @@ function pushHistory(force = false) {
     const sample = createHistorySample();
     historySamples.push(sample);
     saveHistory();
+    applyEstimatedProduction(historySamples);
     saveSampleToSupabase(sample);
     updateSystemStatus();
 }
@@ -864,13 +1013,13 @@ function initCharts() {
     const ctxDaily = document.getElementById('dailyBarChart').getContext('2d');
     dailyChart = new Chart(ctxDaily, {
         type: 'bar',
-        data: { labels: ['Pin sạc', 'Pin xả', 'PV'], datasets: [{ label: 'kWh hôm nay', data: [realData.dailyCharge, realData.dailyDischarge, realData.dailyPv], backgroundColor: ['rgba(120,201,181,0.84)', 'rgba(141,181,255,0.84)', 'rgba(245,182,74,0.84)'], borderColor: 'rgba(255, 255, 255, 0.72)', borderWidth: 1, borderRadius: 10 }] },
+        data: { labels: ['Pin sạc', 'Pin xả', 'PV'], datasets: [{ label: 'kWh hôm nay', data: [productionValue('dailyCharge'), productionValue('dailyDischarge'), productionValue('dailyPv')], backgroundColor: ['rgba(120,201,181,0.84)', 'rgba(141,181,255,0.84)', 'rgba(245,182,74,0.84)'], borderColor: 'rgba(255, 255, 255, 0.72)', borderWidth: 1, borderRadius: 10 }] },
         options: glassChartOptions()
     });
     const ctxMonth = document.getElementById('monthlyLineChart').getContext('2d');
     monthlyChart = new Chart(ctxMonth, {
         type: 'bar',
-        data: { labels: ['Pin sạc', 'Pin xả', 'PV'], datasets: [{ label: 'kWh tháng này', data: [realData.monthCharge, realData.monthDischarge, realData.monthPv], backgroundColor: ['rgba(120,201,181,0.84)', 'rgba(141,181,255,0.84)', 'rgba(245,182,74,0.84)'], borderColor: 'rgba(255, 255, 255, 0.72)', borderWidth: 1, borderRadius: 10 }] },
+        data: { labels: ['Pin sạc', 'Pin xả', 'PV'], datasets: [{ label: 'kWh tháng này', data: [productionValue('monthCharge'), productionValue('monthDischarge'), productionValue('monthPv')], backgroundColor: ['rgba(120,201,181,0.84)', 'rgba(141,181,255,0.84)', 'rgba(245,182,74,0.84)'], borderColor: 'rgba(255, 255, 255, 0.72)', borderWidth: 1, borderRadius: 10 }] },
         options: glassChartOptions()
     });
 
@@ -936,14 +1085,14 @@ function initCharts() {
     applyHistoryToLineCharts();
     setupChartControls();
 }
-function updateCharts() {
-    pushHistory();
+function updateCharts(options = {}) {
+    if (!options.skipHistoryPush) pushHistory();
     if (dailyChart) {
-        dailyChart.data.datasets[0].data = [realData.dailyCharge, realData.dailyDischarge, realData.dailyPv];
+        dailyChart.data.datasets[0].data = [productionValue('dailyCharge'), productionValue('dailyDischarge'), productionValue('dailyPv')];
         dailyChart.update('none');
     }
     if (monthlyChart) {
-        monthlyChart.data.datasets[0].data = [realData.monthCharge, realData.monthDischarge, realData.monthPv];
+        monthlyChart.data.datasets[0].data = [productionValue('monthCharge'), productionValue('monthDischarge'), productionValue('monthPv')];
         monthlyChart.update('none');
     }
     applyHistoryToLineCharts();
@@ -998,12 +1147,14 @@ function connectEvents() {
 }
 connectEvents();
 initSupabase();
+applyEstimatedProduction(historySamples);
 initCharts();
 updateFloatingCards();
 updateOtherUI();
 updateInsights();
 updateSystemStatus();
 loadHistoryFromSupabase();
+loadProductionFromSupabase();
 setInterval(() => {
     if (lastEventAt && Date.now() - lastEventAt > 90000) espConnected = false;
     updateSystemStatus();
