@@ -59,6 +59,8 @@ let lastSaveAt = null;
 let lastSaveError = null;
 let connected = false;
 let reconnectTimer = null;
+let pendingInitialSave = false;
+let saving = false;
 
 function normalizeSensorId(id) {
     return String(id || '')
@@ -140,33 +142,48 @@ function historySampleToRow(sample) {
 }
 
 async function saveSampleToSupabase() {
+    if (saving) return;
     if (!SUPABASE_URL || !SUPABASE_KEY) {
         lastSaveError = 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY';
         return;
     }
     if (!hasRealtimeData()) return;
 
+    saving = true;
     const row = historySampleToRow(createHistorySample());
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=device_id,ts`, {
-        method: 'POST',
-        headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-            Prefer: 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify(row)
-    });
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=device_id,ts`, {
+            method: 'POST',
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify(row)
+        });
 
-    if (!response.ok) {
-        lastSaveError = await response.text();
-        console.warn('Supabase save failed:', lastSaveError);
-        return;
+        if (!response.ok) {
+            lastSaveError = await response.text();
+            console.warn('Supabase save failed:', lastSaveError);
+            return;
+        }
+
+        lastSaveAt = Date.now();
+        lastSaveError = null;
+        console.log('Saved sample', row.ts, {pv: row.pv_w, load: row.load_w, bat: row.battery_w});
+    } finally {
+        saving = false;
     }
+}
 
-    lastSaveAt = Date.now();
-    lastSaveError = null;
-    console.log('Saved sample', row.ts, {pv: row.pv_w, load: row.load_w, bat: row.battery_w});
+function scheduleInitialSave() {
+    if (pendingInitialSave || lastSaveAt || !hasRealtimeData()) return;
+    pendingInitialSave = true;
+    setTimeout(async () => {
+        pendingInitialSave = false;
+        await saveSampleToSupabase();
+    }, 2500);
 }
 
 function handleSseEvent(type, data) {
@@ -180,6 +197,7 @@ function handleSseEvent(type, data) {
         realData[key] = Number.isFinite(numericValue) ? numericValue : null;
         connected = true;
         lastEventAt = Date.now();
+        scheduleInitialSave();
     } catch (err) {
         console.warn('Bad SSE event:', err.message);
     }

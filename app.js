@@ -13,6 +13,7 @@ let lastEventAt = null;
 let lastSupabaseSyncAt = null;
 let supabaseStatus = 'disabled';
 let supabaseRealtimeChannel = null;
+let selectedRangePreset = '24h';
 
 let realData = {
     pv: null, load: null, grid: null, bat: null,
@@ -884,6 +885,11 @@ function applyRealtimeRow(row) {
         historySamples.push(sample);
         historySamples.sort((a, b) => a.ts - b.ts);
         saveHistory();
+        if (selectedRangePreset && selectedRangePreset !== 'custom') {
+            const nextRange = rangeFromPreset(selectedRangePreset);
+            selectedRange = {from: nextRange.from, to: nextRange.to || null};
+            setRangeInputs(selectedRange, nextRange.label);
+        }
     }
 
     espConnected = true;
@@ -1019,7 +1025,7 @@ async function loadLatestFromSupabase() {
     try {
         const { data, error } = await supabaseClient
             .from(SUPABASE_TABLE)
-            .select('*')
+            .select('ts,pv_w,load_w,battery_w,grid_w,soc_percent,battery_voltage_v,pv_voltage_v,pv_current_a,jk_current_a,inverter_temp_c,mos_temp_c,output_voltage_v,output_frequency_hz,apparent_va,load_percent,cell_diff_v,daily_charge_kwh,daily_discharge_kwh,daily_pv_kwh,month_charge_kwh,month_discharge_kwh,month_pv_kwh')
             .eq('device_id', DEVICE_ID)
             .order('ts', { ascending: false })
             .limit(1);
@@ -1286,6 +1292,7 @@ function applySelectedRange(range, activePreset = null) {
     selectedRange = {from: range.from, to: range.to || null};
     const presetSelect = document.getElementById('rangePresetSelect');
     const resolvedPreset = activePreset || presetForRange(selectedRange);
+    selectedRangePreset = resolvedPreset || 'custom';
     if (presetSelect) presetSelect.value = resolvedPreset || 'custom';
     setRangeInputs(selectedRange, range.label || (resolvedPreset ? rangeFromPreset(resolvedPreset).label : 'Khoảng tùy chỉnh'));
     applyHistoryToLineCharts();
@@ -1314,6 +1321,7 @@ function setupChartControls() {
         presetSelect.addEventListener('change', () => {
             const preset = presetSelect.value;
             if (preset === 'custom') {
+                selectedRangePreset = 'custom';
                 setRangeInputs(selectedRange, 'Khoảng tùy chỉnh');
                 return;
             }
