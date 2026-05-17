@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 node_modules/
+exports/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
