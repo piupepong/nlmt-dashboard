@@ -746,17 +746,6 @@ function glassChartOptions(extra = {}) {
     };
 }
 
-function historyChartOptions(extra = {}) {
-    return glassChartOptions({
-        parsing: false,
-        scales: {
-            x: {type: 'linear', grid: {color: chartTheme().gridSoft}, ticks: {color: chartTheme().text}},
-            y: {grid: {color: chartTheme().grid}, ticks: {color: chartTheme().text}}
-        },
-        ...extra
-    });
-}
-
 function padTimePart(value) {
     return String(value).padStart(2, '0');
 }
@@ -1134,39 +1123,30 @@ function formatHistoryLabel(timestamp, spanMs) {
     return `${padTimePart(date.getHours())}:${padTimePart(date.getMinutes())}`;
 }
 
-function chartPoint(sample, key) {
-    return {x: sample.ts, y: sample[key]};
-}
-
 function applyHistoryToLineCharts() {
     const samples = getChartHistory();
     const to = selectedRange.to || Date.now();
     const span = to - (selectedRange.from || to);
+    const labels = samples.map(sample => formatHistoryLabel(sample.ts, span));
 
     if (livePowerChart) {
-        livePowerChart.data.datasets[0].data = samples.map(sample => chartPoint(sample, 'pv'));
-        livePowerChart.data.datasets[1].data = samples.map(sample => chartPoint(sample, 'load'));
-        livePowerChart.data.datasets[2].data = samples.map(sample => chartPoint(sample, 'bat'));
-        livePowerChart.data.datasets[3].data = samples.map(sample => chartPoint(sample, 'grid'));
-        livePowerChart.options.scales.x.min = selectedRange.from;
-        livePowerChart.options.scales.x.max = to;
-        livePowerChart.options.scales.x.ticks.callback = value => formatHistoryLabel(Number(value), span);
+        livePowerChart.data.labels = labels;
+        livePowerChart.data.datasets[0].data = samples.map(sample => sample.pv);
+        livePowerChart.data.datasets[1].data = samples.map(sample => sample.load);
+        livePowerChart.data.datasets[2].data = samples.map(sample => sample.bat);
+        livePowerChart.data.datasets[3].data = samples.map(sample => sample.grid);
         livePowerChart.update('none');
     }
     if (batteryTrendChart) {
-        batteryTrendChart.data.datasets[0].data = samples.map(sample => chartPoint(sample, 'soc'));
-        batteryTrendChart.data.datasets[1].data = samples.map(sample => chartPoint(sample, 'voltage'));
-        batteryTrendChart.options.scales.x.min = selectedRange.from;
-        batteryTrendChart.options.scales.x.max = to;
-        batteryTrendChart.options.scales.x.ticks.callback = value => formatHistoryLabel(Number(value), span);
+        batteryTrendChart.data.labels = labels;
+        batteryTrendChart.data.datasets[0].data = samples.map(sample => sample.soc);
+        batteryTrendChart.data.datasets[1].data = samples.map(sample => sample.voltage);
         batteryTrendChart.update('none');
     }
     if (temperatureChart) {
-        temperatureChart.data.datasets[0].data = samples.map(sample => chartPoint(sample, 'invTemp'));
-        temperatureChart.data.datasets[1].data = samples.map(sample => chartPoint(sample, 'mosTemp'));
-        temperatureChart.options.scales.x.min = selectedRange.from;
-        temperatureChart.options.scales.x.max = to;
-        temperatureChart.options.scales.x.ticks.callback = value => formatHistoryLabel(Number(value), span);
+        temperatureChart.data.labels = labels;
+        temperatureChart.data.datasets[0].data = samples.map(sample => sample.invTemp);
+        temperatureChart.data.datasets[1].data = samples.map(sample => sample.mosTemp);
         temperatureChart.update('none');
     }
     updateSystemStatus();
@@ -1376,7 +1356,7 @@ function initCharts() {
     dailyChart = new Chart(ctxDaily, {
         type: 'bar',
         data: { labels: ['Pin sạc', 'Pin xả', 'PV'], datasets: [{ label: 'kWh hôm nay', data: [productionValue('dailyCharge'), productionValue('dailyDischarge'), productionValue('dailyPv')], backgroundColor: ['rgba(120,201,181,0.84)', 'rgba(141,181,255,0.84)', 'rgba(245,182,74,0.84)'], borderColor: 'rgba(255, 255, 255, 0.72)', borderWidth: 1, borderRadius: 10 }] },
-        options: historyChartOptions()
+        options: glassChartOptions()
     });
     const ctxMonth = document.getElementById('monthlyLineChart').getContext('2d');
     monthlyChart = new Chart(ctxMonth, {
@@ -1423,9 +1403,9 @@ function initCharts() {
                 {label: 'Điện áp V', data: [], borderColor: '#8db5ff', backgroundColor: 'rgba(141,181,255,0.12)', pointRadius: 0, borderWidth: 3, tension: 0.36, spanGaps: true, yAxisID: 'y1'}
             ]
         },
-        options: historyChartOptions({
+        options: glassChartOptions({
             scales: {
-                x: {type: 'linear', grid: {color: chartTheme().gridSoft}, ticks: {color: chartTheme().text}},
+                x: {grid: {color: chartTheme().gridSoft}, ticks: {color: chartTheme().text}},
                 y: {position: 'left', min: 0, max: 100, grid: {color: chartTheme().grid}, ticks: {color: chartTheme().text}},
                 y1: {position: 'right', grid: {drawOnChartArea: false}, ticks: {color: chartTheme().text}}
             }
@@ -1441,7 +1421,7 @@ function initCharts() {
                 {label: 'MOS °C', data: [], borderColor: '#e76f51', backgroundColor: 'rgba(231,111,81,0.12)', pointRadius: 0, borderWidth: 3, tension: 0.34, spanGaps: true, fill: true}
             ]
         },
-        options: historyChartOptions()
+        options: glassChartOptions()
     });
 
     applyHistoryToLineCharts();
