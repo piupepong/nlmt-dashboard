@@ -1,4 +1,5 @@
-import http from 'node:http';
+import http from 'http';
+import https from 'https';
 
 const EVENT_URL = process.env.ESPHOME_EVENT_URL || 'https://piupepong.ddnsfree.com/events';
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -65,6 +66,58 @@ let pendingInitialSave = false;
 let saving = false;
 let seededFromSupabase = false;
 
+function httpClientFor(url) {
+    return url.protocol === 'https:' ? https : http;
+}
+
+function requestText(url, options = {}) {
+    return new Promise((resolve, reject) => {
+        const parsedUrl = new URL(url);
+        const body = options.body || null;
+        const requestOptions = {
+            method: options.method || 'GET',
+            headers: {
+                ...(options.headers || {})
+            }
+        };
+        if (body && !requestOptions.headers['Content-Length']) {
+            requestOptions.headers['Content-Length'] = Buffer.byteLength(body);
+        }
+
+        const req = httpClientFor(parsedUrl).request(parsedUrl, requestOptions, res => {
+            const chunks = [];
+            res.on('data', chunk => chunks.push(chunk));
+            res.on('end', () => {
+                const text = Buffer.concat(chunks).toString('utf8');
+                resolve({
+                    ok: res.statusCode >= 200 && res.statusCode < 300,
+                    status: res.statusCode,
+                    statusText: res.statusMessage,
+                    text
+                });
+            });
+        });
+        req.on('error', reject);
+        req.setTimeout(30000, () => {
+            req.destroy(new Error('HTTP request timeout'));
+        });
+        if (body) req.write(body);
+        req.end();
+    });
+}
+
+async function requestJson(url, options = {}) {
+    const response = await requestText(url, {
+        ...options,
+        headers: {
+            Accept: 'application/json',
+            ...(options.headers || {})
+        }
+    });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${response.text}`);
+    return response.text ? JSON.parse(response.text) : null;
+}
+
 function normalizeSensorId(id) {
     return String(id || '')
         .toLowerCase()
@@ -110,16 +163,13 @@ async function seedLatestFromSupabase() {
             `device_id=eq.${encodeURIComponent(DEVICE_ID)}` +
             '&select=pv_w,load_w,battery_w,grid_w,soc_percent,battery_voltage_v,pv_voltage_v,pv_current_a,jk_current_a,inverter_temp_c,mos_temp_c,output_voltage_v,output_frequency_hz,apparent_va,load_percent,cell_diff_v,daily_charge_kwh,daily_discharge_kwh,daily_pv_kwh,month_charge_kwh,month_discharge_kwh,month_pv_kwh' +
             '&order=ts.desc&limit=1';
-        const response = await fetch(url, {
+        const rows = await requestJson(url, {
             headers: {
                 apikey: SUPABASE_KEY,
                 Authorization: `Bearer ${SUPABASE_KEY}`,
                 Accept: 'application/json'
             }
         });
-        if (!response.ok) throw new Error(await response.text());
-
-        const rows = await response.json();
         const row = rows && rows[0];
         if (!row) return false;
 
@@ -215,7 +265,7 @@ async function saveSampleToSupabase() {
     saving = true;
     const row = historySampleToRow(createHistorySample());
     try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=device_id,ts`, {
+        const response = await requestText(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=device_id,ts`, {
             method: 'POST',
             headers: {
                 apikey: SUPABASE_KEY,
@@ -227,7 +277,7 @@ async function saveSampleToSupabase() {
         });
 
         if (!response.ok) {
-            lastSaveError = await response.text();
+            lastSaveError = response.text;
             console.warn('Supabase save failed:', lastSaveError);
             return;
         }
@@ -288,22 +338,33 @@ function scheduleReconnect() {
 async function connectEvents() {
     try {
         console.log('Connecting ESPHome SSE:', EVENT_URL);
-        const response = await fetch(EVENT_URL, {headers: {Accept: 'text/event-stream'}});
-        if (!response.ok || !response.body) throw new Error(`SSE HTTP ${response.status}`);
+        await new Promise((resolve, reject) => {
+            const parsedUrl = new URL(EVENT_URL);
+            const req = httpClientFor(parsedUrl).request(parsedUrl, {
+                method: 'GET',
+                headers: {Accept: 'text/event-stream'}
+            }, res => {
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                    reject(new Error(`SSE HTTP ${res.statusCode}`));
+                    res.resume();
+                    return;
+                }
 
-        connected = true;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-            const {done, value} = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, {stream: true});
-            const blocks = buffer.split(/\r?\n\r?\n/);
-            buffer = blocks.pop() || '';
-            blocks.forEach(parseSseBlock);
-        }
+                connected = true;
+                let buffer = '';
+                res.setEncoding('utf8');
+                res.on('data', chunk => {
+                    buffer += chunk;
+                    const blocks = buffer.split(/\r?\n\r?\n/);
+                    buffer = blocks.pop() || '';
+                    blocks.forEach(parseSseBlock);
+                });
+                res.on('end', resolve);
+                res.on('error', reject);
+            });
+            req.on('error', reject);
+            req.end();
+        });
     } catch (err) {
         console.warn('ESPHome SSE disconnected:', err.message);
     } finally {

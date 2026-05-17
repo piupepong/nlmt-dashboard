@@ -8,6 +8,6 @@
     "start": "node render-worker.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=12.22"
   }
 }
