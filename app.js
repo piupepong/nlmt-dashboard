@@ -844,29 +844,35 @@ function rowToHistorySample(row) {
     };
 }
 
+function applyRowNumber(key, value) {
+    if (value === null || value === undefined) return;
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue)) realData[key] = numericValue;
+}
+
 function applyRealtimeRow(row) {
-    realData.pv = row.pv_w === null ? null : Number(row.pv_w);
-    realData.load = row.load_w === null ? null : Number(row.load_w);
-    realData.bat = row.battery_w === null ? null : Number(row.battery_w);
-    realData.grid = row.grid_w === null ? null : Number(row.grid_w);
-    realData.soc = row.soc_percent === null ? null : Number(row.soc_percent);
-    realData.battVoltage = row.battery_voltage_v === null ? null : Number(row.battery_voltage_v);
-    realData.pvVoltage = row.pv_voltage_v === null ? null : Number(row.pv_voltage_v);
-    realData.pvCurrent = row.pv_current_a === null ? null : Number(row.pv_current_a);
-    realData.jkCurrent = row.jk_current_a === null ? null : Number(row.jk_current_a);
-    realData.invTemp = row.inverter_temp_c === null ? null : Number(row.inverter_temp_c);
-    realData.tempMos = row.mos_temp_c === null ? null : Number(row.mos_temp_c);
-    realData.outputVoltage = row.output_voltage_v === null ? null : Number(row.output_voltage_v);
-    realData.freq = row.output_frequency_hz === null ? null : Number(row.output_frequency_hz);
-    realData.apparent = row.apparent_va === null ? null : Number(row.apparent_va);
-    realData.loadPercent = row.load_percent === null ? null : Number(row.load_percent);
-    realData.cellDiff = row.cell_diff_v === null ? null : Number(row.cell_diff_v);
-    realData.dailyCharge = row.daily_charge_kwh === null ? null : Number(row.daily_charge_kwh);
-    realData.dailyDischarge = row.daily_discharge_kwh === null ? null : Number(row.daily_discharge_kwh);
-    realData.dailyPv = row.daily_pv_kwh === null ? null : Number(row.daily_pv_kwh);
-    realData.monthCharge = row.month_charge_kwh === null ? null : Number(row.month_charge_kwh);
-    realData.monthDischarge = row.month_discharge_kwh === null ? null : Number(row.month_discharge_kwh);
-    realData.monthPv = row.month_pv_kwh === null ? null : Number(row.month_pv_kwh);
+    applyRowNumber('pv', row.pv_w);
+    applyRowNumber('load', row.load_w);
+    applyRowNumber('bat', row.battery_w);
+    applyRowNumber('grid', row.grid_w);
+    applyRowNumber('soc', row.soc_percent);
+    applyRowNumber('battVoltage', row.battery_voltage_v);
+    applyRowNumber('pvVoltage', row.pv_voltage_v);
+    applyRowNumber('pvCurrent', row.pv_current_a);
+    applyRowNumber('jkCurrent', row.jk_current_a);
+    applyRowNumber('invTemp', row.inverter_temp_c);
+    applyRowNumber('tempMos', row.mos_temp_c);
+    applyRowNumber('outputVoltage', row.output_voltage_v);
+    applyRowNumber('freq', row.output_frequency_hz);
+    applyRowNumber('apparent', row.apparent_va);
+    applyRowNumber('loadPercent', row.load_percent);
+    applyRowNumber('cellDiff', row.cell_diff_v);
+    applyRowNumber('dailyCharge', row.daily_charge_kwh);
+    applyRowNumber('dailyDischarge', row.daily_discharge_kwh);
+    applyRowNumber('dailyPv', row.daily_pv_kwh);
+    applyRowNumber('monthCharge', row.month_charge_kwh);
+    applyRowNumber('monthDischarge', row.month_discharge_kwh);
+    applyRowNumber('monthPv', row.month_pv_kwh);
 
     const sample = rowToHistorySample(row);
     if (Number.isFinite(sample.ts)) {
@@ -880,6 +886,7 @@ function applyRealtimeRow(row) {
             setRangeInputs(selectedRange, nextRange.label);
         }
     }
+    applyEstimatedProduction(historySamples);
 
     espConnected = true;
     lastEventAt = Number.isFinite(sample.ts) ? sample.ts : Date.now();

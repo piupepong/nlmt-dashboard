@@ -149,9 +149,19 @@ function numberOrNull(value, digits = null) {
     return digits === null ? value : Number(value.toFixed(digits));
 }
 
-function setNumber(key, value) {
-    const numericValue = value === null || value === undefined ? null : Number(value);
-    realData[key] = Number.isFinite(numericValue) ? numericValue : null;
+function setLatestNumber(rows, key, column) {
+    for (const row of rows) {
+        const numericValue = row[column] === null || row[column] === undefined ? null : Number(row[column]);
+        if (Number.isFinite(numericValue)) {
+            realData[key] = numericValue;
+            return true;
+        }
+    }
+    return false;
+}
+
+function omitNullValues(row) {
+    return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null && value !== undefined));
 }
 
 async function seedLatestFromSupabase() {
@@ -162,7 +172,7 @@ async function seedLatestFromSupabase() {
         const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?` +
             `device_id=eq.${encodeURIComponent(DEVICE_ID)}` +
             '&select=pv_w,load_w,battery_w,grid_w,soc_percent,battery_voltage_v,pv_voltage_v,pv_current_a,jk_current_a,inverter_temp_c,mos_temp_c,output_voltage_v,output_frequency_hz,apparent_va,load_percent,cell_diff_v,daily_charge_kwh,daily_discharge_kwh,daily_pv_kwh,month_charge_kwh,month_discharge_kwh,month_pv_kwh' +
-            '&order=ts.desc&limit=1';
+            '&order=ts.desc&limit=500';
         const rows = await requestJson(url, {
             headers: {
                 apikey: SUPABASE_KEY,
@@ -170,31 +180,30 @@ async function seedLatestFromSupabase() {
                 Accept: 'application/json'
             }
         });
-        const row = rows && rows[0];
-        if (!row) return false;
+        if (!rows || !rows.length) return false;
 
-        setNumber('pv', row.pv_w);
-        setNumber('load', row.load_w);
-        setNumber('bat', row.battery_w);
-        setNumber('grid', row.grid_w);
-        setNumber('soc', row.soc_percent);
-        setNumber('battVoltage', row.battery_voltage_v);
-        setNumber('pvVoltage', row.pv_voltage_v);
-        setNumber('pvCurrent', row.pv_current_a);
-        setNumber('jkCurrent', row.jk_current_a);
-        setNumber('invTemp', row.inverter_temp_c);
-        setNumber('tempMos', row.mos_temp_c);
-        setNumber('outputVoltage', row.output_voltage_v);
-        setNumber('freq', row.output_frequency_hz);
-        setNumber('apparent', row.apparent_va);
-        setNumber('loadPercent', row.load_percent);
-        setNumber('cellDiff', row.cell_diff_v);
-        setNumber('dailyCharge', row.daily_charge_kwh);
-        setNumber('dailyDischarge', row.daily_discharge_kwh);
-        setNumber('dailyPv', row.daily_pv_kwh);
-        setNumber('monthCharge', row.month_charge_kwh);
-        setNumber('monthDischarge', row.month_discharge_kwh);
-        setNumber('monthPv', row.month_pv_kwh);
+        setLatestNumber(rows, 'pv', 'pv_w');
+        setLatestNumber(rows, 'load', 'load_w');
+        setLatestNumber(rows, 'bat', 'battery_w');
+        setLatestNumber(rows, 'grid', 'grid_w');
+        setLatestNumber(rows, 'soc', 'soc_percent');
+        setLatestNumber(rows, 'battVoltage', 'battery_voltage_v');
+        setLatestNumber(rows, 'pvVoltage', 'pv_voltage_v');
+        setLatestNumber(rows, 'pvCurrent', 'pv_current_a');
+        setLatestNumber(rows, 'jkCurrent', 'jk_current_a');
+        setLatestNumber(rows, 'invTemp', 'inverter_temp_c');
+        setLatestNumber(rows, 'tempMos', 'mos_temp_c');
+        setLatestNumber(rows, 'outputVoltage', 'output_voltage_v');
+        setLatestNumber(rows, 'freq', 'output_frequency_hz');
+        setLatestNumber(rows, 'apparent', 'apparent_va');
+        setLatestNumber(rows, 'loadPercent', 'load_percent');
+        setLatestNumber(rows, 'cellDiff', 'cell_diff_v');
+        setLatestNumber(rows, 'dailyCharge', 'daily_charge_kwh');
+        setLatestNumber(rows, 'dailyDischarge', 'daily_discharge_kwh');
+        setLatestNumber(rows, 'dailyPv', 'daily_pv_kwh');
+        setLatestNumber(rows, 'monthCharge', 'month_charge_kwh');
+        setLatestNumber(rows, 'monthDischarge', 'month_discharge_kwh');
+        setLatestNumber(rows, 'monthPv', 'month_pv_kwh');
 
         console.log('Seeded latest Supabase row for unchanged sensors');
         return true;
@@ -263,7 +272,7 @@ async function saveSampleToSupabase() {
     if (!hasRealtimeData()) return;
 
     saving = true;
-    const row = historySampleToRow(createHistorySample());
+    const row = omitNullValues(historySampleToRow(createHistorySample()));
     try {
         const response = await requestText(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=device_id,ts`, {
             method: 'POST',
