@@ -47,6 +47,8 @@ const sensorMap = {
     'sensor-tai_bieu_kien': 'apparent',
     'sensor-tan_so_output': 'freq',
     'sensor-jk_nhiet_do_mos': 'tempMos',
+    'sensor-jk_nhiet_do_1': 'tempMos',
+    'sensor-jk_nhiet_do_2': 'tempMos',
     'sensor-jk_lech_ap_cell': 'cellDiff',
     'sensor-dien_ap_output': 'outputVoltage',
     'sensor-dien_ap_luoi': 'gridVoltage',

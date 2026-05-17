@@ -27,6 +27,8 @@ const sensorMap = {
     'sensor-tai_bieu_kien': 'apparent',
     'sensor-tan_so_output': 'freq',
     'sensor-jk_nhiet_do_mos': 'tempMos',
+    'sensor-jk_nhiet_do_1': 'tempMos',
+    'sensor-jk_nhiet_do_2': 'tempMos',
     'sensor-jk_lech_ap_cell': 'cellDiff',
     'sensor-dien_ap_output': 'outputVoltage',
     'sensor-dien_ap_luoi': 'gridVoltage',
@@ -66,6 +68,7 @@ let pendingInitialSave = false;
 let saving = false;
 let seededFromSupabase = false;
 let lastPersistedRow = null;
+const tempMosSources = {};
 
 function httpClientFor(url) {
     return url.protocol === 'https:' ? https : http;
@@ -143,6 +146,22 @@ function resolveSensorKey(id) {
         if (normalized.includes('pv') || normalized.includes('solar')) return 'monthPv';
     }
     return null;
+}
+
+function applySensorValue(key, id, numericValue) {
+    if (!Number.isFinite(numericValue)) {
+        realData[key] = null;
+        return;
+    }
+
+    if (key === 'tempMos') {
+        tempMosSources[normalizeSensorId(id)] = numericValue;
+        const values = Object.values(tempMosSources).filter(Number.isFinite);
+        realData.tempMos = values.length ? Math.max(...values) : numericValue;
+        return;
+    }
+
+    realData[key] = numericValue;
 }
 
 function numberOrNull(value, digits = null) {
@@ -404,10 +423,11 @@ function handleSseEvent(type, data) {
     try {
         const event = JSON.parse(data);
         const raw = event.value !== undefined ? event.value : (event.state === 'ON' ? 1 : event.state);
-        const key = resolveSensorKey(event.id || event.entity_id);
+        const id = event.id || event.entity_id;
+        const key = resolveSensorKey(id);
         if (!key) return;
         const numericValue = parseFloat(raw);
-        realData[key] = Number.isFinite(numericValue) ? numericValue : null;
+        applySensorValue(key, id, numericValue);
         connected = true;
         lastEventAt = Date.now();
         scheduleInitialSave();

@@ -82,6 +82,8 @@ const exactMap = {
     'sensor.nangluongmattroi_tai_bieu_kien': 'apparent',
     'sensor.nangluongmattroi_tan_so_output': 'freq',
     'sensor.nangluongmattroi_jk_nhiet_do_mos': 'tempMos',
+    'sensor.nangluongmattroi_jk_nhiet_do_1': 'tempMos',
+    'sensor.nangluongmattroi_jk_nhiet_do_2': 'tempMos',
     'sensor.nangluongmattroi_jk_lech_ap_cell': 'cellDiff',
     'sensor.nangluongmattroi_dien_ap_output': 'outputVoltage',
     'sensor.nangluongmattroi_pin_sac_ngay': 'dailyCharge',
@@ -115,7 +117,7 @@ function resolveKey(state) {
     if (text.includes('jk_soc') || text.endsWith('_soc')) return 'soc';
     if (text.includes('jk_dong_pin') || text.includes('battery_current')) return 'jkCurrent';
     if (text.includes('nhiet_do_inverter') || text.includes('inverter_temp')) return 'invTemp';
-    if (text.includes('jk_nhiet_do_mos') || text.includes('mos_temp')) return 'tempMos';
+    if (text.includes('jk_nhiet_do_mos') || text.includes('jk_nhiet_do_1') || text.includes('jk_nhiet_do_2') || text.includes('mos_temp')) return 'tempMos';
     if (text.includes('tai_phan_tram') || text.includes('load_percent')) return 'loadPercent';
     if (text.includes('tai_bieu_kien') || text.includes('apparent')) return 'apparent';
     if (text.includes('tan_so_output') || text.includes('output_frequency')) return 'freq';
