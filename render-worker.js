@@ -65,6 +65,7 @@ let reconnectTimer = null;
 let pendingInitialSave = false;
 let saving = false;
 let seededFromSupabase = false;
+let lastPersistedRow = null;
 
 function httpClientFor(url) {
     return url.protocol === 'https:' ? https : http;
@@ -160,6 +161,85 @@ function setLatestNumber(rows, key, column) {
     return false;
 }
 
+function rowNumber(row, column) {
+    const numericValue = row && row[column] !== null && row[column] !== undefined ? Number(row[column]) : null;
+    return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function localDateParts(timestamp) {
+    const date = new Date(timestamp + 7 * 60 * 60 * 1000);
+    return {
+        year: date.getUTCFullYear(),
+        month: date.getUTCMonth() + 1,
+        day: date.getUTCDate()
+    };
+}
+
+function sameLocalDay(leftTs, rightTs) {
+    const left = localDateParts(leftTs);
+    const right = localDateParts(rightTs);
+    return left.year === right.year && left.month === right.month && left.day === right.day;
+}
+
+function sameLocalMonth(leftTs, rightTs) {
+    const left = localDateParts(leftTs);
+    const right = localDateParts(rightTs);
+    return left.year === right.year && left.month === right.month;
+}
+
+function latestFiniteRow(rows, column, samePeriod, currentTs) {
+    for (const row of rows) {
+        const rowTs = row.ts ? new Date(row.ts).getTime() : NaN;
+        if (!Number.isFinite(rowTs) || !samePeriod(rowTs, currentTs)) continue;
+        const value = rowNumber(row, column);
+        if (Number.isFinite(value)) return value;
+    }
+    return null;
+}
+
+function roundedKwh(value) {
+    return Number.isFinite(value) ? Number(value.toFixed(3)) : null;
+}
+
+function productionBase(row, column) {
+    const value = rowNumber(row, column);
+    return Number.isFinite(value) ? value : 0;
+}
+
+function applyCalculatedProduction(row, previousRow) {
+    const currentTs = row.ts ? new Date(row.ts).getTime() : NaN;
+    const previousTs = previousRow && previousRow.ts ? new Date(previousRow.ts).getTime() : NaN;
+    if (!Number.isFinite(currentTs) || !Number.isFinite(previousTs) || currentTs <= previousTs) return row;
+
+    const hours = Math.min((currentTs - previousTs) / 3600000, 0.25);
+    if (hours <= 0) return row;
+
+    const pvW = rowNumber(row, 'pv_w');
+    const batteryW = rowNumber(row, 'battery_w');
+    const pvDelta = Number.isFinite(pvW) && pvW > 0 ? pvW * hours / 1000 : 0;
+    const chargeDelta = Number.isFinite(batteryW) && batteryW > 0 ? batteryW * hours / 1000 : 0;
+    const dischargeDelta = Number.isFinite(batteryW) && batteryW < 0 ? Math.abs(batteryW) * hours / 1000 : 0;
+
+    const sameDay = sameLocalDay(previousTs, currentTs);
+    const sameMonth = sameLocalMonth(previousTs, currentTs);
+
+    const previousDailyPv = sameDay ? productionBase(previousRow, 'daily_pv_kwh') : 0;
+    const previousDailyCharge = sameDay ? productionBase(previousRow, 'daily_charge_kwh') : 0;
+    const previousDailyDischarge = sameDay ? productionBase(previousRow, 'daily_discharge_kwh') : 0;
+    const previousMonthPv = sameMonth ? productionBase(previousRow, 'month_pv_kwh') : 0;
+    const previousMonthCharge = sameMonth ? productionBase(previousRow, 'month_charge_kwh') : 0;
+    const previousMonthDischarge = sameMonth ? productionBase(previousRow, 'month_discharge_kwh') : 0;
+
+    if (Number.isFinite(previousDailyPv)) row.daily_pv_kwh = roundedKwh(previousDailyPv + pvDelta);
+    if (Number.isFinite(previousDailyCharge)) row.daily_charge_kwh = roundedKwh(previousDailyCharge + chargeDelta);
+    if (Number.isFinite(previousDailyDischarge)) row.daily_discharge_kwh = roundedKwh(previousDailyDischarge + dischargeDelta);
+    if (Number.isFinite(previousMonthPv)) row.month_pv_kwh = roundedKwh(previousMonthPv + pvDelta);
+    if (Number.isFinite(previousMonthCharge)) row.month_charge_kwh = roundedKwh(previousMonthCharge + chargeDelta);
+    if (Number.isFinite(previousMonthDischarge)) row.month_discharge_kwh = roundedKwh(previousMonthDischarge + dischargeDelta);
+
+    return row;
+}
+
 function omitNullValues(row) {
     return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null && value !== undefined));
 }
@@ -171,7 +251,7 @@ async function seedLatestFromSupabase() {
     try {
         const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?` +
             `device_id=eq.${encodeURIComponent(DEVICE_ID)}` +
-            '&select=pv_w,load_w,battery_w,grid_w,soc_percent,battery_voltage_v,pv_voltage_v,pv_current_a,jk_current_a,inverter_temp_c,mos_temp_c,output_voltage_v,output_frequency_hz,apparent_va,load_percent,cell_diff_v,daily_charge_kwh,daily_discharge_kwh,daily_pv_kwh,month_charge_kwh,month_discharge_kwh,month_pv_kwh' +
+            '&select=ts,pv_w,load_w,battery_w,grid_w,soc_percent,battery_voltage_v,pv_voltage_v,pv_current_a,jk_current_a,inverter_temp_c,mos_temp_c,output_voltage_v,output_frequency_hz,apparent_va,load_percent,cell_diff_v,daily_charge_kwh,daily_discharge_kwh,daily_pv_kwh,month_charge_kwh,month_discharge_kwh,month_pv_kwh' +
             '&order=ts.desc&limit=500';
         const rows = await requestJson(url, {
             headers: {
@@ -181,6 +261,7 @@ async function seedLatestFromSupabase() {
             }
         });
         if (!rows || !rows.length) return false;
+        lastPersistedRow = rows[0];
 
         setLatestNumber(rows, 'pv', 'pv_w');
         setLatestNumber(rows, 'load', 'load_w');
@@ -198,12 +279,20 @@ async function seedLatestFromSupabase() {
         setLatestNumber(rows, 'apparent', 'apparent_va');
         setLatestNumber(rows, 'loadPercent', 'load_percent');
         setLatestNumber(rows, 'cellDiff', 'cell_diff_v');
-        setLatestNumber(rows, 'dailyCharge', 'daily_charge_kwh');
-        setLatestNumber(rows, 'dailyDischarge', 'daily_discharge_kwh');
-        setLatestNumber(rows, 'dailyPv', 'daily_pv_kwh');
-        setLatestNumber(rows, 'monthCharge', 'month_charge_kwh');
-        setLatestNumber(rows, 'monthDischarge', 'month_discharge_kwh');
-        setLatestNumber(rows, 'monthPv', 'month_pv_kwh');
+        const now = Date.now();
+        realData.dailyCharge = latestFiniteRow(rows, 'daily_charge_kwh', sameLocalDay, now);
+        realData.dailyDischarge = latestFiniteRow(rows, 'daily_discharge_kwh', sameLocalDay, now);
+        realData.dailyPv = latestFiniteRow(rows, 'daily_pv_kwh', sameLocalDay, now);
+        realData.monthCharge = latestFiniteRow(rows, 'month_charge_kwh', sameLocalMonth, now);
+        realData.monthDischarge = latestFiniteRow(rows, 'month_discharge_kwh', sameLocalMonth, now);
+        realData.monthPv = latestFiniteRow(rows, 'month_pv_kwh', sameLocalMonth, now);
+
+        if (Number.isFinite(realData.dailyCharge)) lastPersistedRow.daily_charge_kwh = realData.dailyCharge;
+        if (Number.isFinite(realData.dailyDischarge)) lastPersistedRow.daily_discharge_kwh = realData.dailyDischarge;
+        if (Number.isFinite(realData.dailyPv)) lastPersistedRow.daily_pv_kwh = realData.dailyPv;
+        if (Number.isFinite(realData.monthCharge)) lastPersistedRow.month_charge_kwh = realData.monthCharge;
+        if (Number.isFinite(realData.monthDischarge)) lastPersistedRow.month_discharge_kwh = realData.monthDischarge;
+        if (Number.isFinite(realData.monthPv)) lastPersistedRow.month_pv_kwh = realData.monthPv;
 
         console.log('Seeded latest Supabase row for unchanged sensors');
         return true;
@@ -272,7 +361,8 @@ async function saveSampleToSupabase() {
     if (!hasRealtimeData()) return;
 
     saving = true;
-    const row = omitNullValues(historySampleToRow(createHistorySample()));
+    const fullRow = applyCalculatedProduction(historySampleToRow(createHistorySample()), lastPersistedRow);
+    const row = omitNullValues(fullRow);
     try {
         const response = await requestText(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=device_id,ts`, {
             method: 'POST',
@@ -292,8 +382,9 @@ async function saveSampleToSupabase() {
         }
 
         lastSaveAt = Date.now();
+        lastPersistedRow = {...(lastPersistedRow || {}), ...row};
         lastSaveError = null;
-        console.log('Saved sample', row.ts, {pv: row.pv_w, load: row.load_w, bat: row.battery_w});
+        console.log('Saved sample', row.ts, {pv: row.pv_w, load: row.load_w, bat: row.battery_w, pvKwh: row.daily_pv_kwh});
     } finally {
         saving = false;
     }
