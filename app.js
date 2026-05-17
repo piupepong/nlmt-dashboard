@@ -1,5 +1,5 @@
-// === CẤU HÌNH ESPHOME ===
-const EVENT_URL = "https://piupepong.ddnsfree.com/events";
+// Dashboard only reads Supabase. Armbian worker is responsible for collecting
+// ESPHome data and writing samples to the database.
 const SUPABASE_CONFIG = window.SUPABASE_CONFIG || {};
 const SUPABASE_TABLE = SUPABASE_CONFIG.table || 'energy_samples';
 const DEVICE_ID = SUPABASE_CONFIG.deviceId || 'nlmt-main';
@@ -975,10 +975,6 @@ function applyEstimatedProduction(samples, rows = []) {
         monthDischarge: latestFinite(rows, 'month_discharge_kwh') ?? monthTotals.discharge,
         monthPv: latestFinite(rows, 'month_pv_kwh') ?? monthTotals.pv
     };
-}
-
-async function saveSampleToSupabase(sample) {
-    return false;
 }
 
 async function loadHistoryFromSupabase() {
