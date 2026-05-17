@@ -232,24 +232,24 @@ function avgValue(values) {
 }
 
 function estimateGridEnergy(samples) {
-    if (samples.length < 2) return {importKwh: null, exportKwh: null, offsetKwh: null};
-    let importWh = 0;
-    let exportWh = 0;
+    if (samples.length < 2) return {offsetKwh: null, surplusKwh: null, netKwh: null};
+    let offsetWh = 0;
+    let surplusWh = 0;
     for (let i = 0; i < samples.length - 1; i++) {
         const current = samples[i];
         const next = samples[i + 1];
         if (!Number.isFinite(current.grid) || !Number.isFinite(next.ts) || !Number.isFinite(current.ts)) continue;
         const hours = Math.min(Math.max((next.ts - current.ts) / 3600000, 0), 0.25);
         const watts = Math.abs(current.grid);
-        if (current.grid < 0) importWh += watts * hours;
-        if (current.grid > 0) exportWh += watts * hours;
+        if (current.grid > 0) offsetWh += watts * hours;
+        if (current.grid < 0) surplusWh += watts * hours;
     }
-    const importKwh = importWh / 1000;
-    const exportKwh = exportWh / 1000;
+    const offsetKwh = offsetWh / 1000;
+    const surplusKwh = surplusWh / 1000;
     return {
-        importKwh,
-        exportKwh,
-        offsetKwh: exportKwh - importKwh
+        offsetKwh,
+        surplusKwh,
+        netKwh: offsetKwh - surplusKwh
     };
 }
 
@@ -269,9 +269,9 @@ function updateInsights() {
     setText('peakPv', formatValue(maxValue(pvValues)));
     setText('minSoc', formatValue(minValue(socValues)));
     setText('maxTemp', formatValue(maxValue(tempValues), 1));
-    setText('gridImportKwh', Number.isFinite(gridEnergy.importKwh) ? gridEnergy.importKwh.toFixed(2) : '--');
-    setText('gridExportKwh', Number.isFinite(gridEnergy.exportKwh) ? gridEnergy.exportKwh.toFixed(2) : '--');
-    setText('gridOffsetKwh', Number.isFinite(gridEnergy.offsetKwh) ? gridEnergy.offsetKwh.toFixed(2) : '--');
+    setText('gridImportKwh', Number.isFinite(gridEnergy.offsetKwh) ? gridEnergy.offsetKwh.toFixed(2) : '--');
+    setText('gridExportKwh', Number.isFinite(gridEnergy.surplusKwh) ? gridEnergy.surplusKwh.toFixed(2) : '--');
+    setText('gridOffsetKwh', Number.isFinite(gridEnergy.netKwh) ? gridEnergy.netKwh.toFixed(2) : '--');
     updateAlerts(samples);
 }
 
@@ -403,11 +403,11 @@ function updateFloatingCards() {
         gridSpan.style.color = '#fff2cf';
         gridDirSpan.innerHTML = 'Chờ dữ liệu';
     } else if (gridPower > 0) {
-        gridSpan.style.color = '#2ecc71';
-        gridDirSpan.innerHTML = '📤 Phát lên lưới';
+        gridSpan.style.color = '#8db5ff';
+        gridDirSpan.innerHTML = '⚡ Bù lưới';
     } else if (gridPower < 0) {
         gridSpan.style.color = '#e67e22';
-        gridDirSpan.innerHTML = '📥 Nhập từ lưới';
+        gridDirSpan.innerHTML = 'Dư lưới';
     } else {
         gridSpan.style.color = '#fff2cf';
         gridDirSpan.innerHTML = '⚡ Độc lập';
@@ -497,7 +497,7 @@ function updateNodeCoords() {
     if (width <= 620) {
         nodes = {
             pv: {x: width * 0.28, y: height * 0.18, label: 'PV', color: '#f5b64a'},
-            grid: {x: width * 0.72, y: height * 0.18, label: 'Lưới', color: '#8db5ff'},
+            grid: {x: width * 0.72, y: height * 0.18, label: 'Bù lưới', color: '#8db5ff'},
             inverter: {x: width * 0.5, y: height * 0.46, label: 'Inverter', color: '#ffffff'},
             load: {x: width * 0.28, y: height * 0.78, label: 'Tải', color: '#78dce3'},
             battery: {x: width * 0.72, y: height * 0.78, label: 'Pin', color: '#78c9b5'}
@@ -505,7 +505,7 @@ function updateNodeCoords() {
     } else {
         nodes = {
             pv: {x: width * 0.14, y: height * 0.35, label: 'PV', color: '#f5b64a'},
-            grid: {x: width * 0.86, y: height * 0.35, label: 'Lưới', color: '#8db5ff'},
+            grid: {x: width * 0.86, y: height * 0.35, label: 'Bù lưới', color: '#8db5ff'},
             load: {x: width * 0.25, y: height * 0.72, label: 'Tải', color: '#78dce3'},
             battery: {x: width * 0.75, y: height * 0.72, label: 'Pin', color: '#78c9b5'},
             inverter: {x: width * 0.5, y: height * 0.45, label: 'Inverter', color: '#ffffff'}
@@ -538,8 +538,8 @@ const flowLinks = [
     {from:'inverter', to:'load', key:'load', color:'#78dce3', liftDesktop:-80, liftMobile:-42},
     {from:'inverter', to:'battery', key:'batCharge', color:'#78c9b5', liftDesktop:70, liftMobile:42},
     {from:'battery', to:'inverter', key:'batDischarge', color:'#78c9b5', liftDesktop:70, liftMobile:42},
-    {from:'grid', to:'inverter', key:'gridIn', color:'#8db5ff', liftDesktop:-24, liftMobile:-42},
-    {from:'inverter', to:'grid', key:'gridOut', color:'#f5b64a', liftDesktop:-24, liftMobile:-42}
+    {from:'grid', to:'inverter', key:'gridOffset', color:'#8db5ff', liftDesktop:-24, liftMobile:-42},
+    {from:'inverter', to:'grid', key:'gridSurplus', color:'#f5b64a', liftDesktop:-24, liftMobile:-42}
 ];
 
 function linkLift(link) {
@@ -551,8 +551,8 @@ function linkIsActive(key) {
     if (key === 'load') return realData.load > 20;
     if (key === 'batCharge') return realData.bat > 15;
     if (key === 'batDischarge') return realData.bat < -15;
-    if (key === 'gridIn') return realData.grid < -20;
-    if (key === 'gridOut') return realData.grid > 20;
+    if (key === 'gridOffset') return realData.grid > 20;
+    if (key === 'gridSurplus') return realData.grid < -20;
     return false;
 }
 
@@ -560,7 +560,7 @@ function linkPower(key) {
     if (key === 'pv') return Math.abs(realData.pv);
     if (key === 'load') return Math.abs(realData.load);
     if (key === 'batCharge' || key === 'batDischarge') return Math.abs(realData.bat);
-    if (key === 'gridIn' || key === 'gridOut') return Math.abs(realData.grid);
+    if (key === 'gridOffset' || key === 'gridSurplus') return Math.abs(realData.grid);
     return 0;
 }
 
@@ -981,18 +981,28 @@ async function loadHistoryFromSupabase() {
     updateSystemStatus();
     try {
         const now = Date.now();
-        const from = selectedRange.from || now - 24 * 60 * 60 * 1000;
+        const from = Number.isFinite(selectedRange.from) ? selectedRange.from : null;
         const to = selectedRange.to || now;
-        const { data, error } = await supabaseClient
-            .from(SUPABASE_TABLE)
-            .select('ts,pv_w,load_w,battery_w,grid_w,soc_percent,battery_voltage_v,inverter_temp_c,mos_temp_c')
-            .eq('device_id', DEVICE_ID)
-            .gte('ts', new Date(from).toISOString())
-            .lte('ts', new Date(to).toISOString())
-            .order('ts', { ascending: true })
-            .limit(10000);
-        if (error) throw error;
-        historySamples = data.map(rowToHistorySample);
+        const pageSize = 1000;
+        const rows = [];
+
+        for (let offset = 0; offset < 100000; offset += pageSize) {
+            let query = supabaseClient
+                .from(SUPABASE_TABLE)
+                .select('ts,pv_w,load_w,battery_w,grid_w,soc_percent,battery_voltage_v,inverter_temp_c,mos_temp_c')
+                .eq('device_id', DEVICE_ID)
+                .lte('ts', new Date(to).toISOString())
+                .order('ts', { ascending: true })
+                .range(offset, offset + pageSize - 1);
+            if (from !== null) query = query.gte('ts', new Date(from).toISOString());
+
+            const { data, error } = await query;
+            if (error) throw error;
+            rows.push(...data);
+            if (data.length < pageSize) break;
+        }
+
+        historySamples = rows.map(rowToHistorySample);
         applyHistoryToLineCharts();
         updateInsights();
         supabaseStatus = 'ok';
@@ -1107,7 +1117,7 @@ function pushHistory(force = false) {
 
 function getChartHistory() {
     const now = Date.now();
-    const from = selectedRange.from || now - 24 * 60 * 60 * 1000;
+    const from = Number.isFinite(selectedRange.from) ? selectedRange.from : -Infinity;
     const to = selectedRange.to || now;
     const filtered = historySamples.filter(sample => sample.ts >= from && sample.ts <= to);
     if (filtered.length <= MAX_CHART_POINTS) return filtered;
@@ -1126,7 +1136,10 @@ function formatHistoryLabel(timestamp, spanMs) {
 function applyHistoryToLineCharts() {
     const samples = getChartHistory();
     const to = selectedRange.to || Date.now();
-    const span = to - (selectedRange.from || to);
+    const firstTs = samples[0]?.ts;
+    const span = Number.isFinite(selectedRange.from)
+        ? to - selectedRange.from
+        : (Number.isFinite(firstTs) ? to - firstTs : 0);
     const labels = samples.map(sample => formatHistoryLabel(sample.ts, span));
 
     if (livePowerChart) {
@@ -1237,11 +1250,13 @@ function rangeFromPreset(preset) {
     if (preset === '7d') return {from: now - 7 * day, to: now, label: '7 ngày qua'};
     if (preset === '30d') return {from: now - 30 * day, to: now, label: '30 ngày qua'};
     if (preset === '90d') return {from: now - 90 * day, to: now, label: '90 ngày qua'};
+    if (preset === 'all') return {from: null, to: null, label: 'Tất cả dữ liệu'};
     return {from: now - day, to: now, label: '24 giờ qua'};
 }
 
 function rangeMatchesPreset(range, preset) {
     const candidate = rangeFromPreset(preset);
+    if (preset === 'all') return range.from === null && range.to === null;
     const to = range.to || null;
     const candidateTo = candidate.to || null;
     const tolerance = ['1h', '12h', '24h', '7d', '30d', '90d'].includes(preset) ? 120000 : 60000;
@@ -1250,7 +1265,7 @@ function rangeMatchesPreset(range, preset) {
 }
 
 function presetForRange(range) {
-    const presets = ['today', 'yesterday', 'week', 'month', 'year', '1h', '12h', '24h', '7d', '30d', '90d'];
+    const presets = ['today', 'yesterday', 'week', 'month', 'year', '1h', '12h', '24h', '7d', '30d', '90d', 'all'];
     return presets.find(preset => rangeMatchesPreset(range, preset)) || null;
 }
 
@@ -1261,8 +1276,13 @@ function setRangeInputs(range, label = 'Tùy chỉnh') {
     const toTime = document.getElementById('rangeToTime');
     const summary = document.getElementById('historyRangeSummary');
     const to = range.to || Date.now();
-    if (fromDate) fromDate.value = formatDateInput(range.from);
-    if (fromTime) fromTime.value = formatTimeInput(range.from);
+    if (Number.isFinite(range.from)) {
+        if (fromDate) fromDate.value = formatDateInput(range.from);
+        if (fromTime) fromTime.value = formatTimeInput(range.from);
+    } else {
+        if (fromDate) fromDate.value = '';
+        if (fromTime) fromTime.value = '';
+    }
     if (toDate) toDate.value = formatDateInput(to);
     if (toTime) toTime.value = formatTimeInput(to);
     if (summary) summary.innerText = label;
@@ -1373,7 +1393,7 @@ function initCharts() {
                 {label: 'PV W', data: [], borderColor: '#f5b64a', backgroundColor: 'rgba(245,182,74,0.16)', pointRadius: 0, borderWidth: 3, tension: 0.36, spanGaps: true, fill: true},
                 {label: 'Tải W', data: [], borderColor: '#38bec7', backgroundColor: 'rgba(120,220,227,0.12)', pointRadius: 0, borderWidth: 3, tension: 0.36, spanGaps: true, fill: true},
                 {label: 'Pin W', data: [], borderColor: '#1f7061', backgroundColor: 'rgba(120,201,181,0.14)', pointRadius: 0, borderWidth: 3, tension: 0.36, spanGaps: true, fill: false},
-                {label: 'Lưới W', data: [], borderColor: '#8db5ff', backgroundColor: 'rgba(141,181,255,0.12)', pointRadius: 0, borderWidth: 3, tension: 0.36, spanGaps: true, fill: false}
+                {label: 'Bù lưới W', data: [], borderColor: '#8db5ff', backgroundColor: 'rgba(141,181,255,0.12)', pointRadius: 0, borderWidth: 3, tension: 0.36, spanGaps: true, fill: false}
             ]
         },
         options: glassChartOptions()
@@ -1382,7 +1402,7 @@ function initCharts() {
     powerMixChart = new Chart(document.getElementById('powerMixChart').getContext('2d'), {
         type: 'doughnut',
         data: {
-            labels: ['PV', 'Tải', 'Pin', 'Lưới'],
+            labels: ['PV', 'Tải', 'Pin', 'Bù lưới'],
             datasets: [{
                 data: [valueOrZero(realData.pv), valueOrZero(realData.load), Math.abs(valueOrZero(realData.bat)), Math.abs(valueOrZero(realData.grid))],
                 backgroundColor: ['#f5b64a', '#78dce3', '#78c9b5', '#8db5ff'],

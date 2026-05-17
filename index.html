@@ -28,7 +28,7 @@
                 <div class="fc-meta" id="loadMetaFloat">Đang theo dõi</div>
             </div>
             <div class="floating-card" id="cardGrid">
-                <div class="fc-top"><span class="fc-icon"><i class="fas fa-tower-broadcast"></i></span><span class="fc-title">Lưới</span></div>
+                <div class="fc-top"><span class="fc-icon"><i class="fas fa-tower-broadcast"></i></span><span class="fc-title">Bù lưới</span></div>
                 <div class="fc-main"><span id="gridPowerFloat">0</span><span class="unit">W</span></div>
                 <div class="fc-sub" id="gridDirectionFloat">⚡ độc lập</div>
                 <div class="fc-meta" id="gridMetaFloat">0.0 V</div>
@@ -91,9 +91,9 @@
             <div class="insight-item"><div class="stat-label">PV đỉnh</div><div class="stat-number"><span id="peakPv">--</span> W</div></div>
             <div class="insight-item"><div class="stat-label">SOC thấp nhất</div><div class="stat-number"><span id="minSoc">--</span>%</div></div>
             <div class="insight-item"><div class="stat-label">Nhiệt độ cao nhất</div><div class="stat-number"><span id="maxTemp">--</span> °C</div></div>
-            <div class="insight-item"><div class="stat-label">Nhập lưới</div><div class="stat-number"><span id="gridImportKwh">--</span> kWh</div></div>
-            <div class="insight-item"><div class="stat-label">Phát lưới</div><div class="stat-number"><span id="gridExportKwh">--</span> kWh</div></div>
-            <div class="insight-item"><div class="stat-label">Bù lưới</div><div class="stat-number"><span id="gridOffsetKwh">--</span> kWh</div></div>
+            <div class="insight-item"><div class="stat-label">Bù lưới</div><div class="stat-number"><span id="gridImportKwh">--</span> kWh</div></div>
+            <div class="insight-item"><div class="stat-label">Dư lưới</div><div class="stat-number"><span id="gridExportKwh">--</span> kWh</div></div>
+            <div class="insight-item"><div class="stat-label">Bù ròng</div><div class="stat-number"><span id="gridOffsetKwh">--</span> kWh</div></div>
         </div>
         <div class="alert-list" id="alertList"></div>
     </div>
@@ -130,7 +130,7 @@
                 <div class="stat-item"><div class="stat-label">Điện áp PV</div><div class="stat-number"><span id="invPvV">0</span> V</div></div>
                 <div class="stat-item"><div class="stat-label">Dòng PV</div><div class="stat-number"><span id="invPvA">0</span> A</div></div>
                 <div class="stat-item"><div class="stat-label">Công suất tải</div><div class="stat-number"><span id="invLoad">0</span> W</div></div>
-                <div class="stat-item"><div class="stat-label">Công suất lưới</div><div class="stat-number"><span id="invGrid">0</span> W</div></div>
+                <div class="stat-item"><div class="stat-label">Bù lưới</div><div class="stat-number"><span id="invGrid">0</span> W</div></div>
                 <div class="stat-item"><div class="stat-label">Tải %</div><div class="stat-number"><span id="loadPercent">0</span>%</div></div>
                 <div class="stat-item"><div class="stat-label">Nhiệt độ Inv</div><div class="stat-number"><span id="invTemp">0</span> °C</div></div>
             </div>
@@ -170,6 +170,7 @@
                         <option value="7d">7 ngày qua</option>
                         <option value="30d">30 ngày qua</option>
                         <option value="90d">90 ngày qua</option>
+                        <option value="all">Tất cả dữ liệu</option>
                         <option value="custom">Tùy chỉnh</option>
                     </select>
                 </label>
@@ -196,7 +197,7 @@
                 <button class="line-toggle active" data-chart="livePowerChart" data-dataset="0">PV</button>
                 <button class="line-toggle active" data-chart="livePowerChart" data-dataset="1">Tải</button>
                 <button class="line-toggle active" data-chart="livePowerChart" data-dataset="2">Pin</button>
-                <button class="line-toggle active" data-chart="livePowerChart" data-dataset="3">Lưới</button>
+                <button class="line-toggle active" data-chart="livePowerChart" data-dataset="3">Bù lưới</button>
             </div>
             <canvas id="livePowerChart" height="220"></canvas>
         </div>
@@ -227,7 +228,7 @@
                 <tr><td>Công suất PV</td><td id="tblPv">-- W</td><td>Công suất tải</td><td id="tblLoad">-- W</td></tr>
                 <tr><td>Điện áp PV</td><td id="tblPvV">-- V</td><td>Tải biểu kiến</td><td id="tblApparent">-- VA</td></tr>
                 <tr><td>Dòng PV</td><td id="tblPvA">-- A</td><td>Tần số output</td><td id="tblFreq">-- Hz</td></tr>
-                <tr><td>Công suất lưới</td><td id="tblGrid">-- W</td><td>Điện áp lưới</td><td id="tblGridV">-- V</td></tr>
+                <tr><td>Bù lưới</td><td id="tblGrid">-- W</td><td>Điện áp lưới</td><td id="tblGridV">-- V</td></tr>
                 <tr><td>Điện áp pin inverter</td><td id="tblBattV">-- V</td><td>Nhiệt độ inverter</td><td id="tblTempInv">-- °C</td></tr>
                 <tr><td>JK SOC</td><td id="tblSoc">-- %</td><td>Dòng pin</td><td id="tblBattA">-- A</td></tr>
             </tbody>
