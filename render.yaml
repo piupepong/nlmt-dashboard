@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: nlmt-dashboard-worker
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: ESPHOME_EVENT_URL
+        value: https://piupepong.ddnsfree.com/events
+      - key: SUPABASE_URL
+        value: https://iopqamrtcuxntcojtqeu.supabase.co
+      - key: SUPABASE_TABLE
+        value: energy_samples
+      - key: DEVICE_ID
+        value: nlmt-main
+      - key: SAMPLE_INTERVAL_MS
+        value: 60000
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

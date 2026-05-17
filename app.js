@@ -12,6 +12,7 @@ let espConnected = false;
 let lastEventAt = null;
 let lastSupabaseSyncAt = null;
 let supabaseStatus = 'disabled';
+let supabaseRealtimeChannel = null;
 
 let realData = {
     pv: null, load: null, grid: null, bat: null,
@@ -744,6 +745,17 @@ function glassChartOptions(extra = {}) {
     };
 }
 
+function historyChartOptions(extra = {}) {
+    return glassChartOptions({
+        parsing: false,
+        scales: {
+            x: {type: 'linear', grid: {color: chartTheme().gridSoft}, ticks: {color: chartTheme().text}},
+            y: {grid: {color: chartTheme().grid}, ticks: {color: chartTheme().text}}
+        },
+        ...extra
+    });
+}
+
 function padTimePart(value) {
     return String(value).padStart(2, '0');
 }
@@ -751,6 +763,16 @@ function padTimePart(value) {
 function formatDateTimeLocal(timestamp) {
     const date = new Date(timestamp);
     return `${date.getFullYear()}-${padTimePart(date.getMonth() + 1)}-${padTimePart(date.getDate())}T${padTimePart(date.getHours())}:${padTimePart(date.getMinutes())}`;
+}
+
+function formatTimestampWithLocalOffset(timestamp) {
+    const date = new Date(timestamp);
+    const offsetMinutes = -date.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const absOffset = Math.abs(offsetMinutes);
+    return `${date.getFullYear()}-${padTimePart(date.getMonth() + 1)}-${padTimePart(date.getDate())}` +
+        `T${padTimePart(date.getHours())}:${padTimePart(date.getMinutes())}:${padTimePart(date.getSeconds())}` +
+        `${sign}${padTimePart(Math.floor(absOffset / 60))}:${padTimePart(absOffset % 60)}`;
 }
 
 function loadHistory() {
@@ -792,7 +814,7 @@ function createHistorySample() {
 function historySampleToRow(sample) {
     return {
         device_id: DEVICE_ID,
-        ts: new Date(sample.ts).toISOString(),
+        ts: formatTimestampWithLocalOffset(sample.ts),
         pv_w: sample.pv,
         load_w: sample.load,
         battery_w: sample.bat,
@@ -830,6 +852,48 @@ function rowToHistorySample(row) {
         invTemp: row.inverter_temp_c === null ? null : Number(row.inverter_temp_c),
         mosTemp: row.mos_temp_c === null ? null : Number(row.mos_temp_c)
     };
+}
+
+function applyRealtimeRow(row) {
+    realData.pv = row.pv_w === null ? null : Number(row.pv_w);
+    realData.load = row.load_w === null ? null : Number(row.load_w);
+    realData.bat = row.battery_w === null ? null : Number(row.battery_w);
+    realData.grid = row.grid_w === null ? null : Number(row.grid_w);
+    realData.soc = row.soc_percent === null ? null : Number(row.soc_percent);
+    realData.battVoltage = row.battery_voltage_v === null ? null : Number(row.battery_voltage_v);
+    realData.pvVoltage = row.pv_voltage_v === null ? null : Number(row.pv_voltage_v);
+    realData.pvCurrent = row.pv_current_a === null ? null : Number(row.pv_current_a);
+    realData.jkCurrent = row.jk_current_a === null ? null : Number(row.jk_current_a);
+    realData.invTemp = row.inverter_temp_c === null ? null : Number(row.inverter_temp_c);
+    realData.tempMos = row.mos_temp_c === null ? null : Number(row.mos_temp_c);
+    realData.outputVoltage = row.output_voltage_v === null ? null : Number(row.output_voltage_v);
+    realData.freq = row.output_frequency_hz === null ? null : Number(row.output_frequency_hz);
+    realData.apparent = row.apparent_va === null ? null : Number(row.apparent_va);
+    realData.loadPercent = row.load_percent === null ? null : Number(row.load_percent);
+    realData.cellDiff = row.cell_diff_v === null ? null : Number(row.cell_diff_v);
+    realData.dailyCharge = row.daily_charge_kwh === null ? null : Number(row.daily_charge_kwh);
+    realData.dailyDischarge = row.daily_discharge_kwh === null ? null : Number(row.daily_discharge_kwh);
+    realData.dailyPv = row.daily_pv_kwh === null ? null : Number(row.daily_pv_kwh);
+    realData.monthCharge = row.month_charge_kwh === null ? null : Number(row.month_charge_kwh);
+    realData.monthDischarge = row.month_discharge_kwh === null ? null : Number(row.month_discharge_kwh);
+    realData.monthPv = row.month_pv_kwh === null ? null : Number(row.month_pv_kwh);
+
+    const sample = rowToHistorySample(row);
+    if (Number.isFinite(sample.ts)) {
+        historySamples = historySamples.filter(item => item.ts !== sample.ts);
+        historySamples.push(sample);
+        historySamples.sort((a, b) => a.ts - b.ts);
+        saveHistory();
+    }
+
+    espConnected = true;
+    lastEventAt = Number.isFinite(sample.ts) ? sample.ts : Date.now();
+    lastSupabaseSyncAt = Date.now();
+    supabaseStatus = 'ok';
+
+    updateFloatingCards();
+    updateOtherUI();
+    updateCharts({skipHistoryPush: true});
 }
 
 function startOfLocalDay(timestamp = Date.now()) {
@@ -912,18 +976,7 @@ function applyEstimatedProduction(samples, rows = []) {
 }
 
 async function saveSampleToSupabase(sample) {
-    if (!supabaseReady || !supabaseClient) return;
-    const { error } = await supabaseClient
-        .from(SUPABASE_TABLE)
-        .upsert(historySampleToRow(sample), { onConflict: 'device_id,ts', ignoreDuplicates: false });
-    if (error) {
-        supabaseStatus = 'error';
-        console.warn('Supabase save failed:', error.message);
-    } else {
-        supabaseStatus = 'ok';
-        lastSupabaseSyncAt = Date.now();
-    }
-    updateSystemStatus();
+    return false;
 }
 
 async function loadHistoryFromSupabase() {
@@ -959,6 +1012,46 @@ async function loadHistoryFromSupabase() {
     } finally {
         isLoadingRemoteHistory = false;
     }
+}
+
+async function loadLatestFromSupabase() {
+    if (!supabaseReady || !supabaseClient) return false;
+    try {
+        const { data, error } = await supabaseClient
+            .from(SUPABASE_TABLE)
+            .select('*')
+            .eq('device_id', DEVICE_ID)
+            .order('ts', { ascending: false })
+            .limit(1);
+        if (error) throw error;
+        if (data && data[0]) applyRealtimeRow(data[0]);
+        return true;
+    } catch (err) {
+        supabaseStatus = 'error';
+        console.warn('Supabase latest load failed:', err.message);
+        updateSystemStatus();
+        return false;
+    }
+}
+
+function subscribeSupabaseRealtime() {
+    if (!supabaseReady || !supabaseClient || supabaseRealtimeChannel) return;
+    supabaseRealtimeChannel = supabaseClient
+        .channel(`energy_samples:${DEVICE_ID}`)
+        .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: SUPABASE_TABLE,
+            filter: `device_id=eq.${DEVICE_ID}`
+        }, payload => {
+            if (payload.new) applyRealtimeRow(payload.new);
+        })
+        .subscribe(status => {
+            if (status === 'SUBSCRIBED') {
+                supabaseStatus = 'ok';
+                updateSystemStatus();
+            }
+        });
 }
 
 async function loadProductionFromSupabase() {
@@ -1014,7 +1107,6 @@ function pushHistory(force = false) {
     historySamples.push(sample);
     saveHistory();
     applyEstimatedProduction(historySamples);
-    saveSampleToSupabase(sample);
     updateSystemStatus();
 }
 
@@ -1036,30 +1128,39 @@ function formatHistoryLabel(timestamp, spanMs) {
     return `${padTimePart(date.getHours())}:${padTimePart(date.getMinutes())}`;
 }
 
+function chartPoint(sample, key) {
+    return {x: sample.ts, y: sample[key]};
+}
+
 function applyHistoryToLineCharts() {
     const samples = getChartHistory();
     const to = selectedRange.to || Date.now();
     const span = to - (selectedRange.from || to);
-    const labels = samples.map(sample => formatHistoryLabel(sample.ts, span));
 
     if (livePowerChart) {
-        livePowerChart.data.labels = labels;
-        livePowerChart.data.datasets[0].data = samples.map(sample => sample.pv);
-        livePowerChart.data.datasets[1].data = samples.map(sample => sample.load);
-        livePowerChart.data.datasets[2].data = samples.map(sample => sample.bat);
-        livePowerChart.data.datasets[3].data = samples.map(sample => sample.grid);
+        livePowerChart.data.datasets[0].data = samples.map(sample => chartPoint(sample, 'pv'));
+        livePowerChart.data.datasets[1].data = samples.map(sample => chartPoint(sample, 'load'));
+        livePowerChart.data.datasets[2].data = samples.map(sample => chartPoint(sample, 'bat'));
+        livePowerChart.data.datasets[3].data = samples.map(sample => chartPoint(sample, 'grid'));
+        livePowerChart.options.scales.x.min = selectedRange.from;
+        livePowerChart.options.scales.x.max = to;
+        livePowerChart.options.scales.x.ticks.callback = value => formatHistoryLabel(Number(value), span);
         livePowerChart.update('none');
     }
     if (batteryTrendChart) {
-        batteryTrendChart.data.labels = labels;
-        batteryTrendChart.data.datasets[0].data = samples.map(sample => sample.soc);
-        batteryTrendChart.data.datasets[1].data = samples.map(sample => sample.voltage);
+        batteryTrendChart.data.datasets[0].data = samples.map(sample => chartPoint(sample, 'soc'));
+        batteryTrendChart.data.datasets[1].data = samples.map(sample => chartPoint(sample, 'voltage'));
+        batteryTrendChart.options.scales.x.min = selectedRange.from;
+        batteryTrendChart.options.scales.x.max = to;
+        batteryTrendChart.options.scales.x.ticks.callback = value => formatHistoryLabel(Number(value), span);
         batteryTrendChart.update('none');
     }
     if (temperatureChart) {
-        temperatureChart.data.labels = labels;
-        temperatureChart.data.datasets[0].data = samples.map(sample => sample.invTemp);
-        temperatureChart.data.datasets[1].data = samples.map(sample => sample.mosTemp);
+        temperatureChart.data.datasets[0].data = samples.map(sample => chartPoint(sample, 'invTemp'));
+        temperatureChart.data.datasets[1].data = samples.map(sample => chartPoint(sample, 'mosTemp'));
+        temperatureChart.options.scales.x.min = selectedRange.from;
+        temperatureChart.options.scales.x.max = to;
+        temperatureChart.options.scales.x.ticks.callback = value => formatHistoryLabel(Number(value), span);
         temperatureChart.update('none');
     }
     updateSystemStatus();
@@ -1145,12 +1246,26 @@ function rangeFromPreset(preset) {
     if (preset === 'week') return {from: startOfLocalWeek(now), to: null, label: 'Tuần này'};
     if (preset === 'month') return {from: startOfLocalMonth(now), to: null, label: 'Tháng này'};
     if (preset === 'year') return {from: startOfLocalYear(now), to: null, label: 'Năm nay'};
-    if (preset === '1h') return {from: now - hour, to: null, label: '1 giờ qua'};
-    if (preset === '12h') return {from: now - 12 * hour, to: null, label: '12 giờ qua'};
-    if (preset === '7d') return {from: now - 7 * day, to: null, label: '7 ngày qua'};
-    if (preset === '30d') return {from: now - 30 * day, to: null, label: '30 ngày qua'};
-    if (preset === '90d') return {from: now - 90 * day, to: null, label: '90 ngày qua'};
-    return {from: now - day, to: null, label: '24 giờ qua'};
+    if (preset === '1h') return {from: now - hour, to: now, label: '1 giờ qua'};
+    if (preset === '12h') return {from: now - 12 * hour, to: now, label: '12 giờ qua'};
+    if (preset === '7d') return {from: now - 7 * day, to: now, label: '7 ngày qua'};
+    if (preset === '30d') return {from: now - 30 * day, to: now, label: '30 ngày qua'};
+    if (preset === '90d') return {from: now - 90 * day, to: now, label: '90 ngày qua'};
+    return {from: now - day, to: now, label: '24 giờ qua'};
+}
+
+function rangeMatchesPreset(range, preset) {
+    const candidate = rangeFromPreset(preset);
+    const to = range.to || null;
+    const candidateTo = candidate.to || null;
+    const tolerance = ['1h', '12h', '24h', '7d', '30d', '90d'].includes(preset) ? 120000 : 60000;
+    return Math.abs(range.from - candidate.from) < 60000 &&
+        (to === candidateTo || (to !== null && candidateTo !== null && Math.abs(to - candidateTo) < tolerance));
+}
+
+function presetForRange(range) {
+    const presets = ['today', 'yesterday', 'week', 'month', 'year', '1h', '12h', '24h', '7d', '30d', '90d'];
+    return presets.find(preset => rangeMatchesPreset(range, preset)) || null;
 }
 
 function setRangeInputs(range, label = 'Tùy chỉnh') {
@@ -1170,9 +1285,9 @@ function setRangeInputs(range, label = 'Tùy chỉnh') {
 function applySelectedRange(range, activePreset = null) {
     selectedRange = {from: range.from, to: range.to || null};
     const presetSelect = document.getElementById('rangePresetSelect');
-    if (presetSelect && activePreset) presetSelect.value = activePreset;
-    if (presetSelect && !activePreset) presetSelect.value = 'custom';
-    setRangeInputs(selectedRange, range.label || 'Tùy chỉnh');
+    const resolvedPreset = activePreset || presetForRange(selectedRange);
+    if (presetSelect) presetSelect.value = resolvedPreset || 'custom';
+    setRangeInputs(selectedRange, range.label || (resolvedPreset ? rangeFromPreset(resolvedPreset).label : 'Khoảng tùy chỉnh'));
     applyHistoryToLineCharts();
     loadHistoryFromSupabase();
 }
@@ -1215,7 +1330,8 @@ function setupChartControls() {
                 if (summary) summary.innerText = 'Khoảng thời gian không hợp lệ';
                 return;
             }
-            applySelectedRange({from: range.from, to: range.to, label: 'Khoảng tùy chỉnh'}, null);
+            const matchedPreset = presetForRange(range);
+            applySelectedRange({from: range.from, to: range.to, label: matchedPreset ? rangeFromPreset(matchedPreset).label : 'Khoảng tùy chỉnh'}, matchedPreset);
         });
     }
 
@@ -1252,7 +1368,7 @@ function initCharts() {
     dailyChart = new Chart(ctxDaily, {
         type: 'bar',
         data: { labels: ['Pin sạc', 'Pin xả', 'PV'], datasets: [{ label: 'kWh hôm nay', data: [productionValue('dailyCharge'), productionValue('dailyDischarge'), productionValue('dailyPv')], backgroundColor: ['rgba(120,201,181,0.84)', 'rgba(141,181,255,0.84)', 'rgba(245,182,74,0.84)'], borderColor: 'rgba(255, 255, 255, 0.72)', borderWidth: 1, borderRadius: 10 }] },
-        options: glassChartOptions()
+        options: historyChartOptions()
     });
     const ctxMonth = document.getElementById('monthlyLineChart').getContext('2d');
     monthlyChart = new Chart(ctxMonth, {
@@ -1299,11 +1415,11 @@ function initCharts() {
                 {label: 'Điện áp V', data: [], borderColor: '#8db5ff', backgroundColor: 'rgba(141,181,255,0.12)', pointRadius: 0, borderWidth: 3, tension: 0.36, spanGaps: true, yAxisID: 'y1'}
             ]
         },
-        options: glassChartOptions({
+        options: historyChartOptions({
             scales: {
-                x: {grid: {color: 'rgba(36, 74, 69, 0.08)'}, ticks: {color: '#5d7874'}},
-                y: {position: 'left', min: 0, max: 100, grid: {color: 'rgba(36, 74, 69, 0.1)'}, ticks: {color: '#5d7874'}},
-                y1: {position: 'right', grid: {drawOnChartArea: false}, ticks: {color: '#5d7874'}}
+                x: {type: 'linear', grid: {color: chartTheme().gridSoft}, ticks: {color: chartTheme().text}},
+                y: {position: 'left', min: 0, max: 100, grid: {color: chartTheme().grid}, ticks: {color: chartTheme().text}},
+                y1: {position: 'right', grid: {drawOnChartArea: false}, ticks: {color: chartTheme().text}}
             }
         })
     });
@@ -1317,7 +1433,7 @@ function initCharts() {
                 {label: 'MOS °C', data: [], borderColor: '#e76f51', backgroundColor: 'rgba(231,111,81,0.12)', pointRadius: 0, borderWidth: 3, tension: 0.34, spanGaps: true, fill: true}
             ]
         },
-        options: glassChartOptions()
+        options: historyChartOptions()
     });
 
     applyHistoryToLineCharts();
@@ -1350,43 +1466,7 @@ function updateCharts(options = {}) {
     updateSystemStatus();
 }
 
-// ========== 4. KẾT NỐI ESPHOME ==========
-let evSource;
-function connectEvents() {
-    if (evSource) evSource.close();
-    evSource = new EventSource(EVENT_URL);
-    evSource.onopen = () => {
-        espConnected = true;
-        lastEventAt = Date.now();
-        updateSystemStatus();
-        console.log("ESPHome connected");
-    };
-    evSource.onerror = () => {
-        espConnected = false;
-        updateSystemStatus();
-        console.warn("ESPHome connection lost, retry in 3s");
-        evSource.close();
-        setTimeout(connectEvents, 3000);
-    };
-    evSource.addEventListener('state', (e) => {
-        try{
-            let d = JSON.parse(e.data);
-            let raw = (d.value !== undefined) ? d.value : (d.state === 'ON' ? 1 : d.state);
-            let id = d.id;
-            const key = resolveSensorKey(id);
-            if (!key) return;
-            const numericValue = parseFloat(raw);
-            realData[key] = Number.isFinite(numericValue) ? numericValue : null;
-            espConnected = true;
-            lastEventAt = Date.now();
-            
-            updateFloatingCards();
-            updateOtherUI();
-            updateCharts();
-        } catch(err){}
-    });
-}
-connectEvents();
+// ========== 4. KẾT NỐI REALTIME QUA SUPABASE ==========
 initSupabase();
 setupThemeControls();
 applyEstimatedProduction(historySamples);
@@ -1397,8 +1477,11 @@ updateOperationMonitor();
 updateInsights();
 updateSystemStatus();
 loadHistoryFromSupabase();
+loadLatestFromSupabase();
 loadProductionFromSupabase();
+subscribeSupabaseRealtime();
 setInterval(() => {
     if (lastEventAt && Date.now() - lastEventAt > 90000) espConnected = false;
     updateSystemStatus();
 }, 15000);
+setInterval(loadLatestFromSupabase, 60000);

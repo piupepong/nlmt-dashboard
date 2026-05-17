@@ -550,9 +550,10 @@ h2 i,
 
 .history-range-summary {
     color: var(--ink);
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     font-weight: 850;
     padding: 0 4px;
+    min-height: 18px;
 }
 
 .history-field {
@@ -580,6 +581,11 @@ h2 i,
     padding: 8px 10px;
     outline: none;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.68);
+}
+
+.history-field input[type="time"] {
+    font-variant-numeric: tabular-nums;
+    min-width: 96px;
 }
 
 .history-actions {
