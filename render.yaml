@@ -1,4 +1,9 @@
 services:
+  - type: static
+    name: nlmt-dashboard
+    buildCommand: npm install && npm run build
+    staticPublishPath: .
+    autoDeploy: true
   - type: web
     name: nlmt-dashboard-worker
     env: node
