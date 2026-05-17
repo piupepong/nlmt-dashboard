@@ -24,6 +24,14 @@ SAMPLE_INTERVAL_MS=60000
 
 Nen dung `SUPABASE_SERVICE_ROLE_KEY` tren Render, khong dua key nay vao frontend.
 
+## Bao mat key
+
+- `SUPABASE_SERVICE_ROLE_KEY` chi dat trong Render Environment, khong commit vao repo.
+- `.env` va `.env.*` da duoc ignore. Neu can ghi mau local, copy `.env.example` thanh `.env`.
+- Frontend tinh chi co the dung Supabase anon key. Anon key khong phai bi mat, nhung bat buoc cau hinh RLS/policy dung.
+- Khong dua Home Assistant token, service role key, hoac token ca nhan vao `app.js`, `supabase-config.js`, `README.md`.
+- Neu service role key da tung bi lo trong chat/log, hay rotate key trong Supabase va cap nhat lai Render env.
+
 ## Supabase
 
 Bang `energy_samples` can co unique constraint:

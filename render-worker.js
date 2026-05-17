@@ -3,7 +3,7 @@ import http from 'node:http';
 const EVENT_URL = process.env.ESPHOME_EVENT_URL || 'https://piupepong.ddnsfree.com/events';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'energy_samples';
-const SUPABASE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '')
+const SUPABASE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '')
     .trim()
     .replace(/^["']|["']$/g, '');
 const DEVICE_ID = process.env.DEVICE_ID || 'nlmt-main';
