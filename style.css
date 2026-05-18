@@ -459,6 +459,71 @@ h2 i,
     line-height: 1.2;
     margin-top: 4px;
 }
+.soc-stat {
+    min-width: 170px;
+}
+.battery-soc {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+    height: 38px;
+}
+.battery-shell {
+    position: relative;
+    flex: 1;
+    min-width: 118px;
+    height: 34px;
+    overflow: hidden;
+    border-radius: 10px;
+    border: 2px solid rgba(221, 255, 247, 0.78);
+    background: rgba(5, 20, 27, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18), 0 10px 22px rgba(0,0,0,0.12);
+}
+.battery-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0%;
+    border-radius: 7px;
+    background: linear-gradient(90deg, #e76f51, #f5b64a 45%, #58d68d);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.48), 0 0 18px rgba(120, 220, 227, 0.34);
+    transition: width 0.45s ease, background 0.3s ease;
+}
+.battery-shine {
+    position: absolute;
+    inset: 3px 5px auto 5px;
+    height: 9px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.32), rgba(255,255,255,0.05));
+    pointer-events: none;
+}
+.battery-percent {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f4fffb;
+    font-size: 1rem;
+    font-weight: 900;
+    text-shadow: 0 1px 5px rgba(0,0,0,0.45);
+}
+.battery-cap {
+    width: 7px;
+    height: 18px;
+    border-radius: 0 5px 5px 0;
+    background: rgba(221, 255, 247, 0.78);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.12);
+}
+.battery-soc.low .battery-fill {
+    background: linear-gradient(90deg, #d9534f, #f07a5f);
+}
+.battery-soc.mid .battery-fill {
+    background: linear-gradient(90deg, #f5b64a, #ffd166);
+}
+.battery-soc.high .battery-fill {
+    background: linear-gradient(90deg, #35c98b, #78dce3);
+}
 .chart-row {
     display: grid;
     grid-template-columns: 1fr 1fr;

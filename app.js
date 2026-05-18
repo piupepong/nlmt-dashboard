@@ -96,6 +96,18 @@ function setHtml(id, value) {
     if (el) el.innerHTML = value;
 }
 
+function updateSocBattery(value) {
+    const fill = document.getElementById('socBatteryFill');
+    const wrap = document.getElementById('socBattery');
+    if (!fill || !wrap) return;
+    const soc = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+    fill.style.width = `${soc}%`;
+    wrap.classList.toggle('low', soc > 0 && soc < 25);
+    wrap.classList.toggle('mid', soc >= 25 && soc < 55);
+    wrap.classList.toggle('high', soc >= 55);
+    wrap.setAttribute('aria-label', Number.isFinite(value) ? `SOC pin ${soc.toFixed(0)}%` : 'SOC pin chưa có dữ liệu');
+}
+
 function isNightTime(date = new Date()) {
     const hour = date.getHours();
     return hour >= 18 || hour < 6;
@@ -443,6 +455,7 @@ function updateFloatingCards() {
 
 function updateOtherUI() {
     setText('socVal', formatValue(realData.soc));
+    updateSocBattery(realData.soc);
     setText('voltageVal', formatValue(realData.battVoltage, 1));
     setText('currentVal', formatValue(realData.jkCurrent, 1));
     setText('tempMosVal', formatValue(realData.tempMos, 1));
